@@ -1,0 +1,44 @@
+# --- Vivado project and build output -----------------------------------
+# src/ and the constraints are the source of truth; the project is regenerable.
+*.xpr
+*.cache/
+*.gen/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+*.srcs/
+.Xil/
+vivado*.jou
+vivado*.log
+vivado*.str
+vivado_pid*
+*.backup.jou
+*.backup.log
+usage_statistics_webtalk*
+webtalk*.jou
+webtalk*.log
+
+# --- bitstreams and probe files ----------------------------------------
+*.bit
+*.bin
+*.mcs
+*.ltx
+
+# --- simulation --------------------------------------------------------
+*.vcd
+*.wdb
+*.wlf
+work/
+xsim.dir/
+
+# --- editors and OS ----------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# --- never commit ------------------------------------------------------
+*.bak
+*.orig
