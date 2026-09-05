@@ -32,6 +32,36 @@ webtalk*.log
 work/
 xsim.dir/
 
+# --- coding-agent scratch and tool-specific rule files -----------------
+# The project rules live in RULE.md, under review.  Anything a tool writes
+# for itself stays local, so two people's tools cannot fight over it.
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+GEMINI.md
+QWEN.md
+.claude/
+.codex/
+.cursor/
+.cursorrules
+.cursorignore
+.windsurfrules
+.windsurf/
+.clinerules
+.roo/
+.roomodes
+.aider*
+.continue/
+.codeium/
+.gemini/
+.qodo/
+.specstory/
+.serena/
+.taskmaster/
+.github/copilot-instructions.md
+repomix-output.*
+.repomix/
+
 # --- editors and OS ----------------------------------------------------
 .vscode/
 .idea/

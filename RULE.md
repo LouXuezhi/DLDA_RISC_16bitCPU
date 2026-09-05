@@ -1,4 +1,4 @@
-# Agent instructions — class_cpu
+# Project rules — class_cpu
 
 A 16-bit RISC CPU: 5-stage pipeline, Verilog, targeting the EES-331 board
 (Xilinx Zynq-7000). Coursework for Digital Logic Design and Applications,
@@ -6,13 +6,12 @@ Glasgow College, UESTC.
 
 > **This file is read-only.** Read it, follow it, never edit it. Only a human
 > changes these rules. If a rule blocks the task, say so and stop — do not
-> rewrite the rule to make the task pass. This applies to every file listed
-> under *Entry points* below.
-
-## Entry points
-
-`CLAUDE.md` and `.github/copilot-instructions.md` both point here. This file is
-the only copy of the rules; keep it that way rather than duplicating them.
+> rewrite the rule to make the task pass.
+>
+> No tool loads this file automatically, by design: point your editor or agent
+> at `RULE.md` explicitly. Tool-specific rule files (`CLAUDE.md`, `AGENTS.md`,
+> `.cursorrules`, and the rest) are in `.gitignore` and must not be committed —
+> the rules live here, in one place, under review.
 
 ## Layout
 
@@ -29,10 +28,11 @@ Code follows the spec. If they disagree, fix one of them **in the same commit**.
 
 ## The one design rule
 
-**All zeros means nothing happens.** `inst == 16'h0000` is a NOP, `alu_op == 0`
-is a NOP, every control signal is active high, and every pipeline register
-resets and flushes to zero. Stalling and flushing both work by writing zeros,
-so this rule is what makes them correct. Do not add an encoding that breaks it.
+**All zeros means nothing happens.** Opcode `0000` does nothing whatever the
+other twelve bits hold, `alu_op == 0` is a NOP, every control signal is active
+high, and every pipeline register resets and flushes to zero. Stalling and
+flushing both work by writing zeros, so this rule is what makes them correct.
+Do not add an encoding that breaks it.
 
 ## Verilog
 
@@ -68,13 +68,15 @@ Markdown in `doc/`, one file per topic.
 - `main` is the only long-lived branch. Never force-push it.
 - Commit subject: one imperative line under 60 characters. Then a blank line,
   then *why*, not *what* — the diff already says what.
-- Never commit Vivado project files or build output; see `.gitignore`.
+- Never commit Vivado project files, build output, or tool-specific rule files;
+  see `.gitignore`.
 - An instruction-set change touches `doc/ISA.md` and `src/define_ISA.v` in the
   same commit, or it does not go in.
 
 ## Never
 
-- Move a field position in `define_ISA.v`. The pipeline reads registers before
-  it decodes, which only works while `Rs1` and `Rs2` sit at fixed bits.
+- Move a field position in `define_ISA.v`, or give one field two meanings. The
+  pipeline reads registers before it decodes, which only works while `Rs1` and
+  `Rs2` sit at fixed bits and every field means one thing.
 - Renumber an existing encoding. Reserved space exists for new ones.
 - Add an instruction without a one-line comment saying what it does.

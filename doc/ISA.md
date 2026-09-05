@@ -8,14 +8,19 @@ if code and spec disagree, fix one of them in the same commit.
 
 | Zeroed | Means |
 |---|---|
-| `inst == 16'h0000` | opcode `0000` (SYS), funct `000000` → NOP |
+| opcode `0000` | nothing, whatever the other 12 bits hold |
 | `alu_op == 6'b000000` | NOP, result discarded |
 | `reg_we` `mem_we` `mem_re` `branch` | all active-high, so 0 is inert |
 | any pipeline register after reset or flush | the bubble it should be |
 
 Flush writes zeros into IF/ID; stall writes zeros into ID/EX. With this rule both
-are correct by construction. It also means an unprogrammed block RAM — which
-powers up as zeros — executes NOPs instead of garbage.
+are correct by construction. It also means an unprogrammed block RAM — which powers
+up as zeros — executes NOPs instead of garbage.
+
+**A bubble is not an instruction.** Stalling is `stall[5:0]` plus zeroed control
+bits, entirely inside the pipeline; nothing is fetched or injected to make one. The
+`NOP` *instruction* exists for a different reason: so a programmer can write one,
+and so the zero word is inert.
 
 ## State
 
@@ -37,29 +42,28 @@ No register is hardwired to zero — four registers cannot spare one. `LI` and t
 |---|---|---|---|---|---|
 | **R** | opcode | `Rd` | `Rs1` | `Rs2` | `funct` |
 | **I** | opcode | `Rd` | `Rs1` | `imm[7:0]` spans both ||
-| **S** | opcode | `f2` | `Rs1` | `Rs2` | `imm[5:0]` |
+| **S** | opcode | `imm[7:6]` | `Rs1` | `Rs2` | `imm[5:0]` |
 
-`f2` is `imm[7:6]` for `ST`, the condition code for `BR`. Same wiring either way.
+Every field means exactly one thing in every instruction that uses its format.
 
-`Rs1` is always `[9:8]` and `Rs2` always `[7:6]`, in every format. ID drives the
-register-file read ports straight from the instruction word, so the read starts in
-parallel with decode. The opcode only decides whether the returned value is used —
-read always, decide later.
+`Rs1` is always `[9:8]` and `Rs2` always `[7:6]`. ID drives the register-file read
+ports straight from the instruction word, so the read starts in parallel with
+decode. The opcode only decides whether the returned value is used — read always,
+decide later.
 
 Consequences, both harmless: S-format has no `Rd` but `inst[11:10]` is still read
 (`reg_we = 0`), and I-format has no `Rs2` but port 2 still reads `inst[7:6]`
 (`re2 = 0`).
 
-`ST` needs two registers *and* 8 bits of displacement, which does not fit below
-`Rs2` — so the top 2 bits go in `f2`. Splitting the immediate is cheaper than
-moving a register field, which would put a mux in front of the register file.
+`ST` and the branches need two registers *and* 8 bits of displacement, which does
+not fit below `Rs2` — so the top 2 bits go where `Rd` would be. The split costs
+wires, not gates: `{inst[11:10], inst[5:0]}` is a rename, not an operation.
 
 ## Instructions
 
 | Op | Fmt | Assembly | Meaning |
 |---|---|---|---|
-| `0000` | R | `NOP` | nothing |
-| `0000` | R | `HALT` | freeze the PC until reset |
+| `0000` | — | `NOP` | nothing. Any encoding under this opcode is a NOP. |
 | `0001` | R | `<alu> Rd, Rs1, Rs2` | `Rd ← funct(R[Rs1], R[Rs2])` |
 | `0010` | I | `ADDI Rd, Rs1, #imm8` | `Rd ← R[Rs1] + sext8(imm)` |
 | `0011` | I | `ANDI Rd, Rs1, #imm8` | `Rd ← R[Rs1] & zext8(imm)` |
@@ -68,17 +72,23 @@ moving a register field, which would put a mux in front of the register file.
 | `0110` | I | `LUI  Rd, #imm8` | `Rd ← {imm, 8'h00}` |
 | `0111` | I | `LD   Rd, imm8(Rs1)` | `Rd ← M[(R[Rs1] + sext8(imm))[7:0]]` |
 | `1000` | S | `ST   Rs2, imm8(Rs1)` | `M[(R[Rs1] + sext8(imm))[7:0]] ← R[Rs2]` |
-| `1001` | S | `B<cc> Rs1, Rs2, #imm6` | `if (cc) PC ← PC + sext6(imm)` |
-| `1010` | I | `JAL  Rd, #addr8` | `Rd ← PC+1 ; PC ← imm8` |
-| `1011` | I | `JALR Rd, imm8(Rs1)` | `Rd ← PC+1 ; PC ← (R[Rs1] + sext8(imm))[7:0]` |
+| `1001` | S | `BEQ  Rs1, Rs2, #imm8` | `if (R[Rs1] == R[Rs2]) PC ← PC + sext8(imm)` |
+| `1010` | S | `BNE  Rs1, Rs2, #imm8` | `if (!=)` same |
+| `1011` | S | `BLT  Rs1, Rs2, #imm8` | `if (<)` signed, same |
+| `1100` | S | `BGE  Rs1, Rs2, #imm8` | `if (>=)` signed, same |
+| `1101` | I | `JAL  Rd, #addr8` | `Rd ← PC+1 ; PC ← imm8` |
+| `1110` | I | `JALR Rd, imm8(Rs1)` | `Rd ← PC+1 ; PC ← (R[Rs1] + sext8(imm))[7:0]` |
 
-Opcodes `1100`–`1111` are reserved.
+Opcode `1111` is reserved.
 
 * `ST`'s first register is a **source** — the data being stored. Nothing is written back.
 * Addresses truncate to 8 bits. `LI R0,#0; ST R1,-1(R0)` writes address `0xFF`.
-* Branches are relative to the branch itself, not to `PC+1`.
+* Branches are relative to the branch itself, not to `PC+1`. Range ±128 words; `JAL`
+  covers anything further.
 * `JAL` is absolute — 8 bits reach all 256 instruction words.
 * `JALR` is the return instruction and the jump-table instruction.
+* There is no `HALT`. `JAL Rx, <own address>` is the halt idiom; a dedicated stop
+  would only save power, and the pipeline has no state that needs stopping.
 
 ### ALU funct
 
@@ -94,17 +104,47 @@ forms synthesise the same codes, so EX holds one `case`.
 
 `001100`–`111111` reserved. Shifts use `b[3:0]`.
 
-### Branch conditions
-
-`f2` = `00` `BEQ`, `01` `BNE`, `10` `BLT`, `11` `BGE` — all signed.
-`BGT a,b` assembles as `BLT b,a`, `BLE a,b` as `BGE b,a`; the comparator reads both
-operands symmetrically, so the swap is free.
-
-Range is ±32 instructions. Further away, the assembler inverts and jumps:
-`BLT R1,R2,far` → `BGE R1,R2,.skip` / `JAL R3,far` / `.skip:`.
+`BGT a,b` assembles as `BLT b,a` and `BLE a,b` as `BGE b,a` — the comparator reads
+both operands symmetrically, so the swap is free. Four branch opcodes therefore
+cover all six signed relations.
 
 Do not compare by testing the sign of `a − b`: it overflows, and `0x8000 − 0x0001`
 = `0x7FFF` claims "positive". Use `(a[15] != b[15]) ? a[15] : borrow`.
+
+## Signed and unsigned
+
+The datapath does not know or care, except in three places.
+
+| | Signed and unsigned differ? |
+|---|---|
+| `ADD` `SUB` `AND` `OR` `XOR` `NOR` `SLL` | no — two's complement addition is bit-identical either way |
+| `SLT` vs `SLTU` | yes — the comparison rule |
+| `SRA` vs `SRL` | yes — what fills the vacated high bits |
+| overflow detection | yes — carry-out versus `N ⊕ V` |
+
+Everywhere else, "signed" is an interpretation the programmer puts on a bit pattern,
+not a property of the hardware.
+
+## Widening the immediate
+
+Registers are 16 bits and immediates are 8, so every immediate is widened before it
+reaches the ALU. **Which widening depends on what the immediate means**, and the
+wrong choice silently corrupts the high byte:
+
+| Form | Produces | Used by | Because the immediate is |
+|---|---|---|---|
+| `sext8` | `{{8{imm[7]}}, imm}` | `ADDI` `LD` `ST` `JALR` `LI` branches | a signed number — `0xFF` must stay `−1` |
+| `zext8` | `{8'h00, imm}` | `ANDI` `ORI` | a bit pattern — `0xFF` must stay `255` |
+| `{imm, 8'h00}` | the high byte | `LUI` | the top half of a constant |
+
+`ANDI Rd, Rs, #0xF0` is meant to keep bits 7–4. Zero-extended the mask is `0x00F0`
+and it does. Sign-extended it would be `0xFFF0`, which keeps the whole high byte as
+well — a silent wrong answer, not an error. `ORI Rd, Rs, #0x80` is the same trap in
+reverse: `0x0080` sets one bit, `0xFF80` sets nine.
+
+This is the entire reason `IMM_S8` and `IMM_Z8` are separate selects in
+`define_ctrl.v`. A 16-bit constant is built as `LUI Rd,#hi` then `ORI Rd,Rd,#lo`,
+and the `ORI` only works because its immediate is zero-extended.
 
 ## Decode
 
@@ -116,28 +156,26 @@ wire [1:0] rd     = inst[11:10];
 wire [1:0] rs1    = inst[ 9: 8];
 wire [1:0] rs2    = inst[ 7: 6];
 wire [5:0] funct  = inst[ 5: 0];
-wire [1:0] f2     = inst[11:10];
 wire [7:0] imm_i  = inst[ 7: 0];
-wire [5:0] imm_b  = inst[ 5: 0];
 wire [7:0] imm_s  = {inst[11:10], inst[5:0]};
 ```
 
-Then one `case (opcode)`:
+Then one `case (opcode)`. `op1` and `op2` are the ALU inputs.
 
 | | `re1` | `re2` | `reg_we` | `alu_op` | `op1` | `op2` | `mem_re` | `mem_we` | `branch` |
 |---|---|---|---|---|---|---|---|---|---|
 | `SYS` | 0 | 0 | 0 | `NOP` | — | — | 0 | 0 | — |
-| `ALU` | 1 | 1 | 1 | `funct` | `R[Rs1]` | `R[Rs2]` | 0 | 0 | — |
-| `ADDI` | 1 | 0 | 1 | `ADD` | `R[Rs1]` | `sext8` | 0 | 0 | — |
-| `ANDI` | 1 | 0 | 1 | `AND` | `R[Rs1]` | `zext8` | 0 | 0 | — |
-| `ORI` | 1 | 0 | 1 | `OR` | `R[Rs1]` | `zext8` | 0 | 0 | — |
-| `LI` | 0 | 0 | 1 | `ADD` | `0` | `sext8` | 0 | 0 | — |
-| `LUI` | 0 | 0 | 1 | `ADD` | `0` | `{imm,8'h0}` | 0 | 0 | — |
-| `LD` | 1 | 0 | 1 | `ADD` | `R[Rs1]` | `sext8` | **1** | 0 | — |
-| `ST` | 1 | **1** | 0 | `ADD` | `R[Rs1]` | `sext8` | 0 | **1** | — |
-| `BR` | 1 | 1 | 0 | `NOP` | — | — | 0 | 0 | `cc` |
-| `JAL` | 0 | 0 | 1 | `ADD` | `PC` | `1` | 0 | 0 | always |
-| `JALR` | **1** | 0 | 1 | `ADD` | `PC` | `1` | 0 | 0 | always |
+| `ALU` | 1 | 1 | 1 | `funct` | `REG` | `REG` | 0 | 0 | — |
+| `ADDI` | 1 | 0 | 1 | `ADD` | `REG` | `IMM` `S8` | 0 | 0 | — |
+| `ANDI` | 1 | 0 | 1 | `AND` | `REG` | `IMM` `Z8` | 0 | 0 | — |
+| `ORI` | 1 | 0 | 1 | `OR` | `REG` | `IMM` `Z8` | 0 | 0 | — |
+| `LI` | 0 | 0 | 1 | `ADD` | `ZERO` | `IMM` `S8` | 0 | 0 | — |
+| `LUI` | 0 | 0 | 1 | `ADD` | `ZERO` | `IMM` `U8` | 0 | 0 | — |
+| `LD` | 1 | 0 | 1 | `ADD` | `REG` | `IMM` `S8` | **1** | 0 | — |
+| `ST` | 1 | **1** | 0 | `ADD` | `REG` | `IMM` `SPLIT` | 0 | **1** | — |
+| branches | 1 | 1 | 0 | `NOP` | — | — | 0 | 0 | opcode |
+| `JAL` | 0 | 0 | 1 | `ADD` | `PC` | `IMM` `ONE` | 0 | 0 | always |
+| `JALR` | **1** | 0 | 1 | `ADD` | `PC` | `IMM` `ONE` | 0 | 0 | always |
 
 1. `reg_we` is the only bit the register file cares about, so a junk `Rd` is harmless.
 2. `re1`/`re2` drive **forwarding**, not the register file. A source is a hazard only
@@ -147,6 +185,11 @@ Then one `case (opcode)`:
 4. `JAL`/`JALR` link through the ALU (`op1 = PC`, `op2 = 1`), so the write-back mux
    stays 2-way and `PC+1` is never carried down the pipeline as its own field.
 
+The two operand muxes are not symmetric because the instruction set is not: operand
+1 is never an immediate, and operand 2 is never the PC. So `op1` selects among
+`{REG, PC, ZERO}` and `op2` only among `{REG, IMM}`, with the immediate generator
+supplying the constant `1` as one of its forms.
+
 `JALR` sets `re1 = 1` because its *target* needs `R[Rs1]`. That value goes to the
 branch-target adder in ID, is forwarded like any other ID read, and a load feeding a
 `JALR` is a load-use stall.
@@ -155,9 +198,9 @@ Branch target, one 8-bit adder with a mux on its inputs:
 
 | | `a` | `b` |
 |---|---|---|
-| `BR` | `PC` | `sext6(imm6)` |
-| `JAL` | `8'h0` | `imm8` |
-| `JALR` | `R[Rs1][7:0]` forwarded | `sext8(imm8)` |
+| branches | `PC` | `sext8(imm_s)` |
+| `JAL` | `8'h0` | `imm_i` |
+| `JALR` | `R[Rs1][7:0]` forwarded | `sext8(imm_i)` |
 
 ## Hazards
 
@@ -184,6 +227,7 @@ instruction; not-taken costs nothing.
 | `NOT  Rd, Rs` | `NOR  Rd, Rs, Rs` | 1 |
 | `NEG  Rd, Rs` | `NOR Rd,Rs,Rs` ; `ADDI Rd,Rd,#1` | 2 |
 | `J    addr` | `JAL Rx, addr`, result discarded | 1 |
+| `HALT` | `JAL Rx, .` — jump to self | 1 |
 | `RET  Rlink` | `JALR Rx, 0(Rlink)`, result discarded | 1 |
 | `LI16 Rd, #imm16` | `LUI Rd,#hi` ; `ORI Rd,Rd,#lo` | 2 |
 | `BGT` `BLE` | operand swap | 1 |
@@ -192,7 +236,7 @@ With four registers a workable convention is `R3` as link and scratch, `R0`–`R
 
 ## Example
 
-Sum `M[0..3]`, show the total on the LEDs, halt.
+Sum `M[0..3]`, show the total on the LEDs, stop.
 
 ```
         LI   R0, #0          ; i = 0
@@ -204,7 +248,7 @@ loop:   LD   R2, 0(R0)       ; v = M[i]
         BLT  R0, R3, loop    ; while (i < 4)
         LI   R0, #0
         ST   R1, -1(R0)      ; M[0xFF] = sum  ->  LEDs
-        HALT
+done:   JAL  R3, done        ; stop
 ```
 
 | Addr | Bit fields | Hex |
@@ -215,13 +259,14 @@ loop:   LD   R2, 0(R0)       ; v = M[i]
 | 3 | `0111 10 00 00000000` | `7800` |
 | 4 | `0001 01 01 10 000001` | `1581` |
 | 5 | `0010 00 00 00000001` | `2001` |
-| 6 | `1001 10 00 11 111101` | `98FD` |
+| 6 | `1011 11 00 11 111101` | `BCFD` |
 | 7 | `0101 00 00 00000000` | `5000` |
 | 8 | `1000 11 00 01 111111` | `8C7F` |
-| 9 | `0000 00 00 00 000001` | `0001` |
+| 9 | `1101 11 00 00001001` | `DC09` |
 
-The branch targets `6 + (−3) = 3`. The store's displacement `−1` splits as `f2 = 11`,
-`imm6 = 111111`, rejoins to `0xFF`, and added to `R0 = 0` addresses the LED port.
+The branch displacement `−3` splits as `imm[7:6] = 11`, `imm[5:0] = 111101`, rejoins
+to `0xFD`, and targets `6 + (−3) = 3`. The store's `−1` rejoins to `0xFF`; added to
+`R0 = 0` and truncated to 8 bits it addresses the LED port.
 
 Per iteration: `LD R2` → `ADD` is a load-use, one bubble; `ADDI R0` → `BLT` forwards
 from EX with zero bubbles; a taken `BLT` kills one instruction. Four instructions,
@@ -232,18 +277,17 @@ six cycles.
 1. **Four registers.** Anything with more than three live values spills to memory.
    Widening the register fields to 3 bits would take 3 bits from every immediate —
    a different ISA, not a parameter change.
-2. **Branch range ±32.** Beyond that, invert-and-jump: 2 words and one extra taken branch.
-3. **No unsigned branch.** `SLTU` computes the comparison into a register; there is no
-   `BLTU`. Fine while addresses and counters stay under 32768.
-4. **No shift-immediate.** `SLL Rd,Rs,Rt` needs the amount in a register — one `LI` and
-   one register. The alternative was a sub-encoding inside the immediate field, which
-   cost more in decode irregularity than it saved.
-5. **No byte addressing.** Byte arrays waste half of each word. Opcode `1100` is the
+2. **No unsigned branch.** `SLTU` computes the comparison into a register, but there
+   is no `BLTU`. Fine while addresses and counters stay under 32768.
+3. **No shift-immediate.** `SLL Rd,Rs,Rt` needs the amount in a register — one `LI`
+   and one register. The alternative was a sub-field inside the immediate, which
+   would make the immediate's width depend on a value carried inside it.
+4. **No byte addressing.** Byte arrays waste half of each word. Opcode `1111` is the
    natural home for `LB`/`SB`.
-6. **ID is the longest stage.** Register read, forwarding mux, comparator and branch
+5. **ID is the longest stage.** Register read, forwarding mux, comparator and branch
    adder all sit there, and the forwarded value is combinational out of the ALU:
-   `ID/EX → ALU → mux → ID/EX`. If 100 MHz fails, move branch resolution to EX and pay
-   a second killed instruction.
+   `ID/EX → ALU → mux → ID/EX`. If 100 MHz fails, move branch resolution to EX and
+   pay a second killed instruction.
 
 ## References
 
