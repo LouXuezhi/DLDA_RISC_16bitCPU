@@ -348,13 +348,7 @@ done:   JAL  R3, #0          ; 停机 —— 相对寻址，跳到自身就是 +
 | 8 | `1000 11 00 01 111111` | `8C7F` |
 | 9 | `1101 11 00 00000000` | `DC00` |
 
-分支位移 `−3` 拆成 `imm[7:6] = 11` 和 `imm[5:0] = 111101`，拼回来是 `0xFD`，目标是
-`6 + (−3) = 3`。存储指令的 `−1` 拼回 `0xFF`；加上 `R0 = 0` 再截断到 8 位，指向的就是 LED
-端口 —— **正是这个截断，才让一个不含大常数的程序有办法够到那个端口**。
 
-每轮循环，从 ISA 层面看：`LD R2` → `ADD` 是一次 load-use，一个气泡；`ADDI R0` → `BLT` 从
-EX 前递，零气泡；命中的 `BLT` 杀掉一条指令。四条指令，六个发射槽。当前实现的 `cache` 在此
-之上每次取指再多花一拍，那是存储的性质，不是流水线的性质。
 
 ## 局限 · Limits
 
@@ -376,20 +370,9 @@ EX 前递，零气泡；命中的 `BLT` 杀掉一条指令。四条指令，六�
 测试放在 [`testbench/`](../testbench/)，写法见该目录下的 README。
 
 一个测试的形状是：把十六进制程序 `$readmemh` 进 `dut.u_cache.imem`，跑若干周期，然后检查
-寄存器和数据字。两条经验值得照做：
+寄存器和数据字。
 
-**让错误的答案活到最后。** 如果一个测试要证明某条指令被跳过了，那条指令必须写一个后面没人
-覆盖的值，否则不管它有没有执行，检查都会通过。
 
-**把 bug 塞回去。** 测试通过之后，故意把它该抓的东西改坏，确认它真的会失败。一个从没失败过
-的测试，没有被证明测到了任何东西。
-
-*Make a wrong answer survive into a register nothing later overwrites; and put the bug
-back once the test passes, because a test that has never failed has not been shown to
-test anything.*
-
-把 `cpu_core` 的 `LATENCY` 参数设成大于 1，`cache` 会拉高 `busy`，从而把暂停通路也测到。
-**慢的存储只应该改变周期数，不应该改变结果。**
 
 ## 参考文献 · References
 
