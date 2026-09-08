@@ -29,6 +29,8 @@ webtalk*.log
 # tb/ is a local scratch harness, deliberately not shared.  testbench/ is
 # the tracked place for tests.
 tb/
+build/
+.surver-token
 *.vcd
 *.wdb
 *.wlf
