@@ -1,0 +1,13 @@
+// LUI/ORI build a 16-bit constant; ANDI-style mask; NOR as NOT.
+//        LUI R0, #0xAB        ; R0 = AB00
+60AB
+//        ORI R0, R0, #0xCD    ; R0 = ABCD   (zero-extended, or this breaks)
+40CD
+//        LI  R1, #0x0F        ; R1 = 000F
+540F
+//        AND R2, R0, R1       ; R2 = 000D
+1843
+//        NOR R3, R0, R0       ; R3 = ~ABCD = 5432   (the NOT idiom)
+1C06
+//        JAL R1, #0           ; halt
+D400

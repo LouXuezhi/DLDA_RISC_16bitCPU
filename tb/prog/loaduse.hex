@@ -1,0 +1,13 @@
+// Load-use interlock, then a forwarding chain EX->ID twice in a row.
+//     0  LI   R0, #0
+5000
+//     1  LD   R1, 3(R0)       ; R1 = M[3] = 7
+7403
+//     2  ADD  R2, R1, R1      ; load-use: needs the bubble.  R2 = 14
+1941
+//     3  ADDI R3, R2, #1      ; forwarded from EX.  R3 = 15
+2E01
+//     4  ST   R3, 5(R0)       ; M[5] = 15
+80C5
+//     5  JAL  R0, #0          ; halt
+D000
