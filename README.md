@@ -10,7 +10,7 @@ Coursework for Digital Logic Design and Applications, Glasgow College, UESTC.
 | [`doc/ISA.md`](doc/ISA.md) | instruction set specification |
 | [`src/define_ISA.v`](src/define_ISA.v) | opcodes, funct codes, field positions |
 | [`src/define_ctrl.v`](src/define_ctrl.v) | stall vector, memory map |
-| [`tb/`](tb/) | testbench and programs; run `tb/run.sh` |
+| [`testbench/`](testbench/) | tests for the core, and how to write one |
 | [`RULE.md`](RULE.md) | conventions for anyone — human or tool — writing code here |
 
 **Design axiom:** all zeros means nothing happens. Opcode `0000` does nothing,

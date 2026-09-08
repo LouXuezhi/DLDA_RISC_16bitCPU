@@ -26,6 +26,9 @@ webtalk*.log
 *.ltx
 
 # --- simulation --------------------------------------------------------
+# tb/ is a local scratch harness, deliberately not shared.  testbench/ is
+# the tracked place for tests.
+tb/
 *.vcd
 *.wdb
 *.wlf
