@@ -3,6 +3,9 @@
 #   make sim              跑仿真，生成 addi.vcd
 #   make sim TB=<file>    换一个 testbench（默认 testbench/tb_addi_wave.v）
 #   make test             跑 testbench/ 下的全部测试程序
+#   make bench            跑统一 benchmark，和 bench/baseline.csv 比
+#   make bench-baseline   把这次的结果存成新基线（改进之前先存一次）
+#   make bench-asm        重新汇编 bench/prog/*.s -> .hex
 #   make wave             sim + 起 surver。波形在 Mac 的 Surfer 里看
 #   make serve            只起/重起 surver（波形没变、Surfer 掉线时用）
 #   make stop             停掉本项目的 surver
@@ -31,7 +34,7 @@ TB       ?= testbench/tb_addi_wave.v
 VCD      := addi.vcd
 BUILD    := build
 
-.PHONY: sim test wave serve stop url lint clean help
+.PHONY: sim test bench bench-baseline bench-asm wave serve stop url lint clean help
 .DEFAULT_GOAL := help
 
 $(BUILD):
@@ -51,6 +54,20 @@ test: | $(BUILD)
 	  ./$(BUILD)/t.out 2>&1 | grep -v "^WARNING\|^VCD" || fail=1; \
 	done; \
 	if [ $$fail -eq 0 ]; then echo && echo "全部跑完"; else echo && echo "有失败"; exit 1; fi
+
+# 统一 benchmark：一次跑完所有核 x 所有 cache 延迟，出周期数和 CPI。
+# 核和期望值写在 bench/bench.list，怎么加一个见 bench/README.md。
+bench:
+	@bench/run.sh
+
+bench-baseline:
+	@bench/run.sh -b
+
+# .hex 是提交进仓库的，所以跑 benchmark 不需要 python；只有改了 .s 才要这一步。
+bench-asm:
+	@for s in bench/prog/*.s; do \
+	  python3 bench/asm.py $$s > $${s%.s}.hex && echo "$$s -> $${s%.s}.hex"; \
+	done
 
 wave: sim serve
 
@@ -88,4 +105,4 @@ clean:
 	rm -f $(VCD) *.vcd
 
 help:
-	@sed -n "2,11p" $(MAKEFILE_LIST)
+	@sed -n "2,14p" $(MAKEFILE_LIST)

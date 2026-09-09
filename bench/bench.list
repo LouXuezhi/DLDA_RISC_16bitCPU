@@ -1,0 +1,17 @@
+# 统一 benchmark 的清单。一行一个核，空白分隔：
+#
+#   名字  程序.hex  数据.hex（没有就写 -）  周期上限  期望值...
+#
+# 期望值就是 bench/tb_bench.v 认的 plus-arg：+r0..+r3 是末态寄存器，
+# +m/+m1/+m2 是 地址:值。没写的不查。这些值是照算法独立算出来的，
+# 不是从 RTL 上抄下来的 —— 抄下来的期望值等于没写。
+#
+# 停机寄存器（HALT Rx 每圈都会写它）一律不查，见 doc/ISA.md 的注意。
+
+alu      bench/prog/alu.hex     -                          400   +r1=000c +r2=004e +r3=e04e
+fib      bench/prog/fib.hex     -                          800   +r1=0c38 +r2=8d6d +m=ff:0c38
+sumn     bench/prog/sumn.hex    bench/prog/vec32.data.hex  1200  +r0=0000 +r1=0630 +m=ff:0630
+memcpy   bench/prog/memcpy.hex  bench/prog/vec32.data.hex  1200  +r0=0020 +m=40:0003 +m1=5f:0060
+branchy  bench/prog/branchy.hex bench/prog/alt32.data.hex  1500  +r0=0000 +r1=0010 +m=ff:0010
+# doc/ISA.md 的那个例子，和上面的核比是小得多的一个，留着做对照。
+sum      tb/prog/sum.hex        tb/prog/sum.data.hex       400   +r0=0000 +r1=000a +m=ff:000a
