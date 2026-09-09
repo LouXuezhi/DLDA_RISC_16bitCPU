@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html{color-scheme:light dark}
+  body{margin:0}
+  img{max-width:100%}
+  [hidden]{display:none!important}
+</style>
+<title>class_cpu 数据通路互连图</title>
+<style>
+:root{
+  --bg:#E6EAE9; --panel:#F7F9F8; --panel-2:#EEF2F1; --line:#C2CBCA; --line-soft:#D6DDDC;
+  --ink:#15201E; --ink-2:#3B4A48; --muted:#66756F;
+  --c-data:#0E6C7C; --c-ctrl:#AC5C09; --c-fwd:#6746B4; --c-mem:#2A7742; --c-rf:#A3355A;
+  --grid:#D3DAD9; --tag:#DDE4E3; --shadow:0 1px 0 rgba(20,32,30,.06);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C1110; --panel:#141A19; --panel-2:#1A2120; --line:#2C3735; --line-soft:#222C2B;
+    --ink:#DEE7E4; --ink-2:#B3C0BD; --muted:#849692;
+    --c-data:#4FC3D6; --c-ctrl:#F0A340; --c-fwd:#AE93F2; --c-mem:#68C486; --c-rf:#F08AA9;
+    --grid:#1B2322; --tag:#222B2A; --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C1110; --panel:#141A19; --panel-2:#1A2120; --line:#2C3735; --line-soft:#222C2B;
+  --ink:#DEE7E4; --ink-2:#B3C0BD; --muted:#849692;
+  --c-data:#4FC3D6; --c-ctrl:#F0A340; --c-fwd:#AE93F2; --c-mem:#68C486; --c-rf:#F08AA9;
+  --grid:#1B2322; --tag:#222B2A; --shadow:none;
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--ink); margin:0;
+  font-family:"IBM Plex Sans Condensed","PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif;
+  font-size:14px; line-height:1.55;
+}
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+
+/* ---- shell ---- */
+.wrap{max-width:1560px; margin:0 auto; padding:22px 20px 40px}
+header.top{display:flex; flex-wrap:wrap; align-items:flex-end; gap:16px 24px; margin-bottom:16px}
+h1{
+  font-size:26px; font-weight:700; letter-spacing:-.01em; margin:0; text-wrap:balance;
+}
+h1 .m{font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:23px}
+.sub{color:var(--muted); font-size:13.5px; margin:2px 0 0; max-width:62ch}
+.counts{margin-left:auto; display:flex; gap:18px; color:var(--muted); font-size:12px; text-align:right}
+.counts b{display:block; color:var(--ink); font-size:19px; font-weight:600;
+  font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums; line-height:1.2}
+
+/* ---- toolbar ---- */
+.bar{
+  display:flex; flex-wrap:wrap; align-items:center; gap:8px;
+  padding:9px 10px; background:var(--panel); border:1px solid var(--line);
+  border-radius:4px; margin-bottom:12px; box-shadow:var(--shadow);
+}
+.chip{
+  display:inline-flex; align-items:center; gap:7px; cursor:pointer; user-select:none;
+  border:1px solid var(--line); background:var(--panel-2); color:var(--ink-2);
+  padding:4px 10px 4px 8px; border-radius:3px; font-size:12.5px; line-height:1.4;
+}
+.chip:hover{border-color:var(--muted)}
+.chip:focus-visible{outline:2px solid var(--c-data); outline-offset:2px}
+.chip .swatch{width:16px; height:3px; border-radius:2px; background:currentColor; flex:none}
+.chip[data-on="0"]{opacity:.42; text-decoration:line-through}
+.chip .n{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted)}
+.sep{width:1px; align-self:stretch; background:var(--line); margin:0 4px}
+.btn{
+  cursor:pointer; border:1px solid var(--line); background:var(--panel-2); color:var(--ink-2);
+  padding:5px 10px; border-radius:3px; font:inherit; font-size:12.5px;
+}
+.btn:hover{border-color:var(--muted); color:var(--ink)}
+.btn:focus-visible{outline:2px solid var(--c-data); outline-offset:2px}
+.btn[aria-pressed="true"]{background:var(--ink); color:var(--panel); border-color:var(--ink)}
+.zoom{display:inline-flex; align-items:center; gap:0}
+.zoom .btn{border-radius:0; margin-left:-1px}
+.zoom .btn:first-child{border-radius:3px 0 0 3px; margin-left:0}
+.zoom .btn:last-child{border-radius:0 3px 3px 0}
+.zoom .lvl{min-width:52px; text-align:center; font-family:"IBM Plex Mono",monospace;
+  font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums}
+input.find{
+  font:inherit; font-size:12.5px; font-family:"IBM Plex Mono",monospace;
+  background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+  border-radius:3px; padding:5px 9px; width:190px;
+}
+input.find::placeholder{color:var(--muted); font-family:inherit}
+input.find:focus{outline:2px solid var(--c-data); outline-offset:1px; border-color:transparent}
+
+/* ---- body ---- */
+.body{display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:14px; align-items:start}
+@media (max-width:1080px){ .body{grid-template-columns:minmax(0,1fr)} }
+
+.stage{
+  position:relative; background:var(--panel); border:1px solid var(--line); border-radius:4px;
+  overflow:auto; height:min(78vh,880px); min-height:520px; box-shadow:var(--shadow);
+  background-image:
+    linear-gradient(to right,var(--grid) 1px,transparent 1px),
+    linear-gradient(to bottom,var(--grid) 1px,transparent 1px);
+  background-size:24px 24px;
+  touch-action:pan-x pan-y;
+}
+.stage.grabbing{cursor:grabbing}
+svg.sch{display:block}
+svg.sch text{font-family:"IBM Plex Mono",ui-monospace,monospace}
+
+/* schematic element states */
+.node{cursor:grab}
+.node .box{fill:var(--panel); stroke:var(--line); stroke-width:1.4}
+.node .box.seq{fill:var(--panel-2)}
+.node .nm{fill:var(--ink); font-size:13.5px; font-weight:500}
+.node .zh{font-family:"IBM Plex Sans Condensed","PingFang SC","Microsoft YaHei",sans-serif;
+  fill:var(--muted); font-size:11.5px}
+.node .kindtag{fill:var(--muted); font-size:9.5px; letter-spacing:.06em}
+.node .stripe{stroke-width:0}
+.node:hover .box{stroke:currentColor; stroke-width:2}
+.wire{fill:none; stroke-width:1.5; stroke-linejoin:round}
+.hit{fill:none; stroke:transparent; stroke-width:13; cursor:pointer}
+.lblbg{fill:var(--panel); stroke:var(--line-soft); stroke-width:.8; opacity:.94; rx:2}
+.lbl text{font-size:10.5px; fill:var(--ink-2)}
+.lbl .cap{font-size:9.5px; fill:var(--muted); letter-spacing:.04em}
+
+svg.sch.focusing .edge:not(.hot){opacity:.13}
+svg.sch.focusing .node:not(.hot){opacity:.3}
+.edge.hot .wire{stroke-width:2.6}
+.edge.hot .lblbg{opacity:1; stroke:currentColor}
+.edge.sel .wire{stroke-width:3}
+.node.sel .box{stroke:currentColor; stroke-width:2.4}
+.hidden{display:none}
+
+/* ---- inspector ---- */
+.insp{
+  background:var(--panel); border:1px solid var(--line); border-radius:4px;
+  padding:14px 15px 16px; position:sticky; top:14px; box-shadow:var(--shadow);
+  max-height:min(78vh,880px); overflow:auto;
+}
+.insp h2{margin:0 0 2px; font-size:16px; font-weight:600; letter-spacing:-.01em}
+.insp h2 .mono{font-size:15px}
+.insp .kicker{font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); margin:0 0 8px}
+.insp p.d{margin:6px 0 0; font-size:12.5px; color:var(--ink-2)}
+.insp h3{
+  margin:16px 0 6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--muted); font-weight:600; border-top:1px solid var(--line-soft); padding-top:9px;
+}
+.sigrow{display:grid; grid-template-columns:1fr auto; gap:2px 8px; padding:5px 0; border-bottom:1px dotted var(--line-soft)}
+.sigrow:last-child{border-bottom:0}
+.sigrow .s{font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--ink); word-break:break-all}
+.sigrow .w{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums}
+.sigrow .z{grid-column:1/-1; font-size:11.5px; color:var(--muted)}
+.sigrow .arw{color:var(--muted)}
+.linkrow{
+  display:flex; align-items:baseline; gap:7px; width:100%; text-align:left; cursor:pointer;
+  background:none; border:0; border-bottom:1px dotted var(--line-soft); padding:6px 2px; color:inherit; font:inherit;
+}
+.linkrow:hover{background:var(--panel-2)}
+.linkrow:focus-visible{outline:2px solid var(--c-data); outline-offset:-2px}
+.linkrow .dot{width:9px; height:9px; border-radius:2px; flex:none; align-self:center}
+.linkrow .t{font-family:"IBM Plex Mono",monospace; font-size:12px; flex:1}
+.linkrow .c{font-size:11px; color:var(--muted); font-family:"IBM Plex Mono",monospace}
+.legend-note{font-size:11.5px; color:var(--muted); margin:10px 0 0}
+.kbd{font-family:"IBM Plex Mono",monospace; font-size:10.5px; border:1px solid var(--line);
+  background:var(--panel-2); border-radius:3px; padding:1px 4px; color:var(--ink-2)}
+footer{margin-top:16px; color:var(--muted); font-size:11.5px; display:flex; flex-wrap:wrap; gap:6px 18px}
+footer code{font-family:"IBM Plex Mono",monospace; color:var(--ink-2)}
+@media (prefers-reduced-motion:no-preference){
+  .wire,.node .box{transition:opacity .12s ease}
+}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1><span class="m">class_cpu</span> 数据通路互连图</h1>
+      <p class="sub">照 <code class="mono">src/cpu_core.v</code> 的例化逐条连线画出：每个框是一个模块，每条线是一束信号，标签就是 Verilog 里的信号名和位宽。</p>
+    </div>
+    <div class="counts">
+      <div><b id="c-mod">12</b>模块</div>
+      <div><b id="c-edge">29</b>连线</div>
+      <div><b id="c-sig">77</b>信号</div>
+    </div>
+  </header>
+
+  <div class="bar" role="toolbar" aria-label="视图控制">
+    <span id="chips" style="display:flex;flex-wrap:wrap;gap:8px"></span>
+    <span class="sep"></span>
+    <button class="btn" id="t-width" aria-pressed="true">位宽</button>
+    <button class="btn" id="t-names" aria-pressed="true">信号名</button>
+    <span class="sep"></span>
+    <span class="zoom">
+      <button class="btn" id="z-out" aria-label="缩小">−</button>
+      <span class="lvl" id="z-lvl">100%</span>
+      <button class="btn" id="z-in" aria-label="放大">+</button>
+    </span>
+    <button class="btn" id="z-fit">适应宽度</button>
+    <span class="sep"></span>
+    <input class="find" id="find" type="search" placeholder="搜信号名 / 模块名" aria-label="搜索信号或模块">
+    <button class="btn" id="reset">重置布局</button>
+  </div>
+
+  <div class="body">
+    <div class="stage" id="stage">
+      <svg class="sch" id="sch" role="img" aria-label="class_cpu 五级流水线模块互连图：PC、IF、IF/ID、ID、ID/EX、EX、EX/MEM、MEM、MEM/WB 沿主干串联，ctrl 与寄存器堆在左，cache 在右，前递与分支路径在右侧回流。"></svg>
+    </div>
+
+    <aside class="insp" id="insp"></aside>
+  </div>
+
+  <footer>
+    <span>拖动框可以重新摆位，布局存在本机浏览器里</span>
+    <span><span class="kbd">拖背景</span> 平移 · <span class="kbd">Ctrl+滚轮</span> 缩放 · <span class="kbd">Esc</span> 取消选中</span>
+    <span>时钟与复位（<code>clk</code> / <code>rst</code>）未画线；带 ▷ 的框是时序逻辑</span>
+  </footer>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* =====================================================================
+   数据：全部取自 src/cpu_core.v 的例化 + 各模块 port 声明
+   ===================================================================== */
+var W = 1250, H = 1400;
+
+var GROUPS = {
+  data:{zh:"流水线数据", v:"--c-data"},
+  ctrl:{zh:"控制 / 暂停 / 分支", v:"--c-ctrl"},
+  fwd :{zh:"前递", v:"--c-fwd"},
+  mem :{zh:"存储器接口", v:"--c-mem"},
+  rf  :{zh:"寄存器堆", v:"--c-rf"}
+};
+
+var MODS = [
+ {id:"pc_reg",    zh:"PC 寄存器",   kind:"seq",  g:"ctrl", x:520,y:40,   w:240,h:56,
+  d:"每拍 PC+1；id_br 有效时装入 id_br_addr，并在下一拍把 br_ready 抬起来告诉 IF 新地址已就位。ctrl_stall[0] 只能让它保持，压不住分支。"},
+ {id:"if_stage",  zh:"IF 取指",     kind:"seq",  g:"data", x:520,y:170,  w:240,h:68,
+  d:"向 cache 发取指请求，等 imem_done 收指令。等待期间拉 stallreq；分支时丢掉在途的那次取指，等 pc_br_ready。"},
+ {id:"if_id_reg", zh:"IF / ID",     kind:"seq",  g:"data", x:520,y:300,  w:240,h:48,
+  d:"流水线寄存器。看 ctrl_stall[1:2] 决定保持还是推进；id_br 有效时冲刷成气泡。"},
+ {id:"id_stage",  zh:"ID 译码",     kind:"comb", g:"data", x:520,y:420,  w:240,h:80,
+  d:"译码、读寄存器堆、做 EX/MEM 两级前递、判定分支。不发 select：立即数直接以 16 位值放在 op1/op2/ls_offset 上，rs1_re/rs2_re 兼作操作数选择。"},
+ {id:"regfile",   zh:"寄存器堆",    kind:"seq",  g:"rf",   x:230,y:330,  w:170,h:64,
+  d:"4 个 16 位寄存器，双读单写。没有一个恒零寄存器 —— 四个寄存器匀不出来。"},
+ {id:"ctrl",      zh:"暂停控制",    kind:"comb", g:"ctrl", x:230,y:620,  w:170,h:64,
+  d:"把四级的 stallreq 收成 6 位 ctrl_stall：某级请求暂停就冻结它和它上游，下游继续走，空出来的就是气泡。"},
+ {id:"id_ex_reg", zh:"ID / EX",     kind:"seq",  g:"data", x:520,y:610,  w:240,h:48,
+  d:"流水线寄存器。控制信号全部高有效，所以清零就是气泡。"},
+ {id:"ex_stage",  zh:"EX 执行",     kind:"comb", g:"data", x:520,y:760,  w:240,h:72,
+  d:"ALU 运算、链接地址选择、访存地址计算（op1 + ls_offset，截断到 8 位）。alu_op_o/st_data 直通给下游和前递用。"},
+ {id:"ex_mem_reg",zh:"EX / MEM",    kind:"seq",  g:"data", x:520,y:930,  w:240,h:48, d:"流水线寄存器。"},
+ {id:"mem_stage", zh:"MEM 访存",    kind:"seq",  g:"data", x:520,y:1080, w:240,h:72,
+  d:"按 alu_op 判定是 LD 还是 ST，驱动 dcache；等 dmem_done 期间拉 stallreq，把读回的数据顶掉 ALU 结果写回。"},
+ {id:"mem_wb_reg",zh:"MEM / WB",    kind:"seq",  g:"data", x:520,y:1250, w:240,h:48, d:"流水线寄存器，直接接寄存器堆的写口。"},
+ {id:"cache",     zh:"指令 / 数据存储", kind:"store", g:"mem", x:1030,y:560, w:180,h:130,
+  d:"imem 1024 字（PC 取低 10 位索引）、dmem 256 字，各有 busy/done 握手，延迟由 LATENCY 参数给。"}
+];
+
+/* fs/ts = [边, 位置比例]；lane = 中间那段走线的固定坐标 */
+var EDGES = [
+ {id:"e1", from:"pc_reg", fs:["b",.35], to:"if_stage", ts:["t",.35], g:"data",
+  sig:[["pc","[15:0]","pc","取指地址"]]},
+ {id:"e2", from:"pc_reg", fs:["b",.75], to:"if_stage", ts:["t",.75], g:"ctrl",
+  sig:[["br_ready","","pc_br_ready","分支目标已装入 PC"]]},
+
+ {id:"e3", from:"if_stage", fs:["r",.3], to:"cache", ts:["l",.16], g:"mem", lane:{x:905},
+  sig:[["imem_re","","imem_re","取指请求"],["imem_addr","[15:0]","imem_addr","取指地址"]]},
+ {id:"e4", from:"cache", fs:["l",.32], to:"if_stage", ts:["r",.72], g:"mem", lane:{x:935},
+  sig:[["imem_rdata","[15:0]","imem_rdata","取回的指令字"],["imem_busy","","imem_busy","存储器忙"],["imem_done","","imem_done","本次访问完成"]]},
+
+ {id:"e5", from:"if_stage", fs:["b",.5], to:"if_id_reg", ts:["t",.5], g:"data",
+  sig:[["if_pc","[15:0]","if_pc","这条指令的 PC"],["if_inst","[15:0]","if_inst","指令字"]]},
+ {id:"e6", from:"if_stage", fs:["l",.75], to:"ctrl", ts:["r",.2], g:"ctrl", lane:{x:435},
+  sig:[["stallreq","","if_stallreq","等指令返回，请求暂停"]]},
+
+ {id:"e7", from:"if_id_reg", fs:["b",.5], to:"id_stage", ts:["t",.5], g:"data",
+  sig:[["id_pc","[15:0]","pc","PC"],["id_inst","[15:0]","inst","指令字"]]},
+
+ {id:"e8", from:"id_stage", fs:["l",.25], to:"regfile", ts:["b",.62], g:"rf",
+  sig:[["rs1_re","","re1","读使能，兼作操作数选择"],["rs1_raddr","[1:0]","raddr1","源寄存器 1"],
+       ["rs2_re","","re2","读使能，兼作操作数选择"],["rs2_raddr","[1:0]","raddr2","源寄存器 2"]]},
+ {id:"e9", from:"regfile", fs:["b",.3], to:"id_stage", ts:["l",.55], g:"rf",
+  sig:[["rdata1","[15:0]","rs1_rdata","读出值 1"],["rdata2","[15:0]","rs2_rdata","读出值 2"]]},
+
+ {id:"e10", from:"id_stage", fs:["r",.15], to:"pc_reg", ts:["r",.5], g:"ctrl", lane:{x:785},
+  sig:[["br","","id_br","分支成立"],["br_addr","[15:0]","id_br_addr","分支目标"]]},
+ {id:"e11", from:"id_stage", fs:["r",.32], to:"if_id_reg", ts:["r",.5], g:"ctrl", lane:{x:812}, nolabel:1,
+  sig:[["br","","id_br","同一根线：冲刷 IF/ID"]]},
+ {id:"e12", from:"id_stage", fs:["l",.86], to:"ctrl", ts:["r",.4], g:"ctrl", lane:{x:435},
+  sig:[["stallreq","","id_stallreq","load-use 冒险，请求暂停"]]},
+
+ {id:"e13", from:"id_stage", fs:["b",.5], to:"id_ex_reg", ts:["t",.5], g:"data",
+  sig:[["alu_op","[5:0]","id_alu_op","R 型 funct 字段"],["alu_sel","[2:0]","id_alu_sel","运算类别"],
+       ["op1","[15:0]","id_op1","操作数 1（已前递）"],["op2","[15:0]","id_op2","操作数 2 或立即数"],
+       ["reg_waddr","[1:0]","id_reg_waddr","写回目标寄存器"],["reg_we","","id_reg_we","写回使能"],
+       ["link_addr","[15:0]","id_link_addr","跳转链接返回地址"],["ls_offset","[15:0]","id_ls_offset","访存偏移"]]},
+ {id:"e14", from:"id_ex_reg", fs:["b",.5], to:"ex_stage", ts:["t",.5], g:"data",
+  sig:[["ex_alu_op","[5:0]","alu_op_i",""],["ex_alu_sel","[2:0]","alu_sel",""],
+       ["ex_op1","[15:0]","op1",""],["ex_op2","[15:0]","op2",""],
+       ["ex_reg_waddr","[1:0]","reg_waddr_i",""],["ex_reg_we","","reg_we_i",""],
+       ["ex_link_addr","[15:0]","link_addr",""],["ex_ls_offset","[15:0]","ls_offset",""]]},
+
+ {id:"e15", from:"ex_stage", fs:["l",.8], to:"ctrl", ts:["r",.6], g:"ctrl", lane:{x:435},
+  sig:[["stallreq","","ex_stallreq","多拍运算时请求暂停"]]},
+ {id:"e16", from:"ex_stage", fs:["b",.5], to:"ex_mem_reg", ts:["t",.5], g:"data",
+  sig:[["reg_waddr_o","[1:0]","ex_reg_waddr",""],["reg_we_o","","ex_reg_we",""],
+       ["reg_wdata","[15:0]","ex_reg_wdata","ALU 结果 / 链接地址"],
+       ["ls_addr","[7:0]","ex_ls_addr","访存地址，截断到 8 位"],
+       ["alu_op_o","[5:0]","ex_alu_op","交给 MEM 判定 LD/ST"],["st_data","[15:0]","ex_st_data","待写存储器的数据"]]},
+ {id:"e17", from:"ex_stage", fs:["r",.28], to:"id_stage", ts:["r",.55], g:"fwd", lane:{x:848},
+  sig:[["alu_op_o","[5:0]","fwd_ex_alu_op","是 LD 就前递不了，转而暂停"],
+       ["reg_we_o","","fwd_ex_reg_we",""],["reg_waddr_o","[1:0]","fwd_ex_reg_waddr",""],
+       ["reg_wdata","[15:0]","fwd_ex_reg_wdata","EX 结果直接回灌 ID"]]},
+
+ {id:"e18", from:"ex_mem_reg", fs:["b",.5], to:"mem_stage", ts:["t",.5], g:"data",
+  sig:[["mem_reg_waddr","[1:0]","reg_waddr_i",""],["mem_reg_we","","reg_we_i",""],
+       ["mem_reg_wdata","[15:0]","reg_wdata_i",""],["mem_ls_addr","[7:0]","ls_addr",""],
+       ["mem_alu_op","[5:0]","alu_op",""],["mem_st_data","[15:0]","st_data",""]]},
+
+ {id:"e19", from:"mem_stage", fs:["r",.3], to:"cache", ts:["l",.68], g:"mem", lane:{x:965},
+  sig:[["dmem_re","","dmem_re","读请求"],["dmem_we","","dmem_we","写请求"],
+       ["dmem_addr","[7:0]","dmem_addr","数据地址"],["dmem_wdata","[15:0]","dmem_wdata","写数据"]]},
+ {id:"e20", from:"cache", fs:["l",.86], to:"mem_stage", ts:["r",.72], g:"mem", lane:{x:992},
+  sig:[["dmem_rdata","[15:0]","dmem_rdata","读回的数据"],["dmem_busy","","dmem_busy",""],["dmem_done","","dmem_done",""]]},
+ {id:"e21", from:"mem_stage", fs:["l",.8], to:"ctrl", ts:["r",.8], g:"ctrl", lane:{x:435},
+  sig:[["stallreq","","mem_stallreq","等访存完成，请求暂停"]]},
+ {id:"e22", from:"mem_stage", fs:["b",.5], to:"mem_wb_reg", ts:["t",.5], g:"data",
+  sig:[["reg_waddr_o","[1:0]","mem_reg_waddr",""],["reg_we_o","","mem_reg_we",""],
+       ["reg_wdata_o","[15:0]","mem_reg_wdata","LD 就是读回值，否则是 ALU 结果"]]},
+ {id:"e23", from:"mem_stage", fs:["r",.45], to:"id_stage", ts:["r",.8], g:"fwd", lane:{x:875},
+  sig:[["reg_we_o","","fwd_mem_reg_we",""],["reg_waddr_o","[1:0]","fwd_mem_reg_waddr",""],
+       ["reg_wdata_o","[15:0]","fwd_mem_reg_wdata","MEM 结果回灌 ID"]]},
+
+ {id:"e24", from:"mem_wb_reg", fs:["l",.5], to:"regfile", ts:["l",.75], g:"rf", lane:{x:96},
+  sig:[["wb_reg_we","","we","写使能"],["wb_reg_waddr","[1:0]","waddr","写地址"],["wb_reg_wdata","[15:0]","wdata","写数据"]]},
+
+ {id:"e25", from:"ctrl", fs:["r",.25], to:"pc_reg",     ts:["l",.5], g:"ctrl", lane:{x:470},
+  sig:[["ctrl_stall","[5:0]","ctrl_stall","只看 bit0 STALL_PC"]]},
+ {id:"e26", from:"ctrl", fs:["r",.35], to:"if_id_reg",  ts:["l",.5], g:"ctrl", lane:{x:470}, nolabel:1,
+  sig:[["ctrl_stall","[5:0]","ctrl_stall","看 bit1/bit2"]]},
+ {id:"e27", from:"ctrl", fs:["r",.55], to:"id_ex_reg",  ts:["l",.5], g:"ctrl", lane:{x:470}, nolabel:1,
+  sig:[["ctrl_stall","[5:0]","ctrl_stall","看 bit2/bit3"]]},
+ {id:"e28", from:"ctrl", fs:["r",.7],  to:"ex_mem_reg", ts:["l",.5], g:"ctrl", lane:{x:470}, nolabel:1,
+  sig:[["ctrl_stall","[5:0]","ctrl_stall","看 bit3/bit4"]]},
+ {id:"e29", from:"ctrl", fs:["r",.85], to:"mem_wb_reg", ts:["l",.5], g:"ctrl", lane:{x:470}, nolabel:1,
+  sig:[["ctrl_stall","[5:0]","ctrl_stall","看 bit4/bit5"]]}
+];
+
+/* =====================================================================
+   状态
+   ===================================================================== */
+var SVGNS="http://www.w3.org/2000/svg";
+var M={}, EM={};
+MODS.forEach(function(m){ M[m.id]=m; m.x0=m.x; m.y0=m.y; });
+EDGES.forEach(function(e){ EM[e.id]=e; });
+
+var state = {
+  on:{data:1,ctrl:1,fwd:1,mem:1,rf:1},
+  width:true, names:true, k:1,
+  hover:null, sel:null, q:""
+};
+
+var LS="class_cpu_interconnect_layout_v1";
+try{
+  var saved=JSON.parse(localStorage.getItem(LS)||"null");
+  if(saved) MODS.forEach(function(m){ if(saved[m.id]){ m.x=saved[m.id][0]; m.y=saved[m.id][1]; } });
+}catch(err){}
+function saveLayout(){
+  try{
+    var o={}; MODS.forEach(function(m){ o[m.id]=[Math.round(m.x),Math.round(m.y)]; });
+    localStorage.setItem(LS, JSON.stringify(o));
+  }catch(err){}
+}
+
+var svg=document.getElementById("sch");
+var stage=document.getElementById("stage");
+svg.setAttribute("viewBox","0 0 "+W+" "+H);
+svg.setAttribute("preserveAspectRatio","xMidYMid meet");
+
+var defs=el("defs");
+Object.keys(GROUPS).forEach(function(g){
+  var mk=el("marker",{id:"ah-"+g,viewBox:"0 0 10 10",refX:"9",refY:"5",
+    markerWidth:"6.5",markerHeight:"6.5",orient:"auto-start-reverse"});
+  mk.appendChild(el("path",{d:"M0,0 L10,5 L0,10 z",fill:"var("+GROUPS[g].v+")"}));
+  defs.appendChild(mk);
+});
+svg.appendChild(defs);
+var gEdges=el("g",{"class":"edges"}), gNodes=el("g",{"class":"nodes"});
+svg.appendChild(gEdges); svg.appendChild(gNodes);
+
+function el(n,a){
+  var e=document.createElementNS(SVGNS,n);
+  if(a) for(var k in a) e.setAttribute(k,a[k]);
+  return e;
+}
+function txt(s,a){ var t=el("text",a); t.textContent=s; return t; }
+
+/* =====================================================================
+   走线
+   ===================================================================== */
+function anchor(m,side,t){
+  if(side==="t") return {x:m.x+m.w*t, y:m.y,       nx:0, ny:-1};
+  if(side==="b") return {x:m.x+m.w*t, y:m.y+m.h,   nx:0, ny:1};
+  if(side==="l") return {x:m.x,       y:m.y+m.h*t, nx:-1,ny:0};
+  return              {x:m.x+m.w,     y:m.y+m.h*t, nx:1, ny:0};
+}
+function routePts(e){
+  var a=anchor(M[e.from],e.fs[0],e.fs[1]), b=anchor(M[e.to],e.ts[0],e.ts[1]);
+  var S=12;
+  var p0={x:a.x+a.nx*S,y:a.y+a.ny*S}, p1={x:b.x+b.nx*S,y:b.y+b.ny*S};
+  var aH=a.nx!==0, bH=b.nx!==0, pts=[{x:a.x,y:a.y},p0], lane=e.lane||{};
+  if(!aH && !bH){
+    if(Math.abs(p0.x-p1.x)>.5){
+      var ly=lane.y!=null?lane.y:(p0.y+p1.y)/2;
+      pts.push({x:p0.x,y:ly},{x:p1.x,y:ly});
+    }
+  } else if(aH && bH){
+    var lx=lane.x!=null?lane.x:(p0.x+p1.x)/2;
+    pts.push({x:lx,y:p0.y},{x:lx,y:p1.y});
+  } else if(aH && !bH){
+    if(lane.x!=null) pts.push({x:lane.x,y:p0.y},{x:lane.x,y:p1.y},{x:p1.x,y:p1.y});
+    else pts.push({x:p1.x,y:p0.y});
+  } else {
+    if(lane.y!=null) pts.push({x:p0.x,y:lane.y},{x:p1.x,y:lane.y});
+    else pts.push({x:p0.x,y:p1.y});
+  }
+  pts.push(p1,{x:b.x,y:b.y});
+  var out=[];
+  pts.forEach(function(p){
+    var q=out[out.length-1];
+    if(!q || Math.abs(q.x-p.x)>.4 || Math.abs(q.y-p.y)>.4) out.push(p);
+  });
+  return out;
+}
+function roundPath(pts,r){
+  if(pts.length<3) return "M"+pts.map(function(p){return p.x+" "+p.y;}).join(" L");
+  var d="M"+pts[0].x+" "+pts[0].y;
+  for(var i=1;i<pts.length-1;i++){
+    var p=pts[i],a=pts[i-1],b=pts[i+1];
+    var d1=Math.hypot(p.x-a.x,p.y-a.y), d2=Math.hypot(b.x-p.x,b.y-p.y);
+    var rr=Math.min(r,d1/2,d2/2);
+    var u1={x:(p.x-a.x)/(d1||1),y:(p.y-a.y)/(d1||1)}, u2={x:(b.x-p.x)/(d2||1),y:(b.y-p.y)/(d2||1)};
+    d+=" L"+(p.x-u1.x*rr)+" "+(p.y-u1.y*rr)+" Q"+p.x+" "+p.y+" "+(p.x+u2.x*rr)+" "+(p.y+u2.y*rr);
+  }
+  var last=pts[pts.length-1];
+  d+=" L"+last.x+" "+last.y;
+  return d;
+}
+function longestSeg(pts){
+  var best=null,bl=-1;
+  for(var i=0;i<pts.length-1;i++){
+    var l=Math.hypot(pts[i+1].x-pts[i].x, pts[i+1].y-pts[i].y);
+    if(l>bl){bl=l;best=[pts[i],pts[i+1]];}
+  }
+  return {mx:(best[0].x+best[1].x)/2, my:(best[0].y+best[1].y)/2,
+          vertical:Math.abs(best[0].x-best[1].x)<.5, len:bl};
+}
+
+/* =====================================================================
+   渲染
+   ===================================================================== */
+function edgeLines(e){
+  return e.sig.map(function(s){ return s[0]+(state.width&&s[1]?s[1]:""); });
+}
+function drawEdges(){
+  gEdges.textContent="";
+  EDGES.forEach(function(e){
+    var g=el("g",{"class":"edge","data-id":e.id});
+    g.style.color="var("+GROUPS[e.g].v+")";
+    if(!state.on[e.g]) g.classList.add("hidden");
+    var pts=routePts(e), d=roundPath(pts,7);
+    g.appendChild(el("path",{"class":"wire",d:d,stroke:"var("+GROUPS[e.g].v+")",
+      "marker-end":"url(#ah-"+e.g+")"}));
+    g.appendChild(el("path",{"class":"hit",d:d}));
+
+    if(state.names && !e.nolabel){
+      var lines=edgeLines(e), seg=longestSeg(pts);
+      var cols = lines.length>4 ? 2 : 1;
+      var per = Math.ceil(lines.length/cols);
+      var colw=[],i,c;
+      for(c=0;c<cols;c++){
+        var mx=0;
+        for(i=c*per;i<Math.min(lines.length,(c+1)*per);i++) mx=Math.max(mx,lines[i].length);
+        colw.push(mx*6.32);
+      }
+      var gapw=cols>1?16:0, padx=8, lh=13.2;
+      var bw=colw.reduce(function(a,b){return a+b;},0)+gapw+padx*2;
+      var bh=per*lh+9;
+      var lx=seg.mx-bw/2, ly=seg.my-bh/2;
+      if(seg.len<bh+14 && !seg.vertical) ly=seg.my-bh-6;
+      var lg=el("g",{"class":"lbl"});
+      lg.appendChild(el("rect",{"class":"lblbg",x:lx,y:ly,width:bw,height:bh,rx:2}));
+      var cx=lx+padx;
+      for(c=0;c<cols;c++){
+        for(i=c*per;i<Math.min(lines.length,(c+1)*per);i++){
+          lg.appendChild(txt(lines[i],{x:cx,y:ly+7+(i-c*per)*lh+5}));
+        }
+        cx+=colw[c]+gapw;
+      }
+      g.appendChild(lg);
+    }
+    gEdges.appendChild(g);
+  });
+}
+
+function drawNodes(){
+  gNodes.textContent="";
+  MODS.forEach(function(m){
+    var g=el("g",{"class":"node","data-id":m.id,tabindex:"0",role:"button"});
+    g.style.color="var("+GROUPS[m.g].v+")";
+    var box=el("rect",{"class":"box"+(m.kind==="seq"?" seq":""),x:m.x,y:m.y,width:m.w,height:m.h,rx:3});
+    g.appendChild(box);
+    g.appendChild(el("rect",{"class":"stripe",x:m.x,y:m.y,width:3.5,height:m.h,
+      fill:"var("+GROUPS[m.g].v+")",rx:1.5}));
+    var single=m.h<=52;
+    if(single){
+      g.appendChild(txt(m.id,{"class":"nm",x:m.x+14,y:m.y+m.h/2+5}));
+      g.appendChild(txt(m.zh,{"class":"zh",x:m.x+m.w-12,y:m.y+m.h/2+5,"text-anchor":"end"}));
+    } else {
+      g.appendChild(txt(m.id,{"class":"nm",x:m.x+14,y:m.y+24}));
+      g.appendChild(txt(m.zh,{"class":"zh",x:m.x+14,y:m.y+42}));
+      g.appendChild(txt(m.kind==="comb"?"组合":(m.kind==="store"?"存储阵列":"时序"),
+        {"class":"kindtag",x:m.x+m.w-11,y:m.y+16,"text-anchor":"end"}));
+    }
+    if(m.kind!=="comb"){
+      var cy=m.y+m.h-7, cx=m.x+8;
+      g.appendChild(el("path",{d:"M"+cx+" "+(cy-5)+" L"+(cx+7)+" "+(cy-2.5)+" L"+cx+" "+cy+" z",
+        fill:"var(--muted)"}));
+    }
+    gNodes.appendChild(g);
+  });
+}
+
+function draw(){ drawEdges(); drawNodes(); applyFocus(); }
+
+/* =====================================================================
+   高亮 / 焦点
+   ===================================================================== */
+function incident(mid){ return EDGES.filter(function(e){ return e.from===mid||e.to===mid; }); }
+
+function matchQuery(){
+  var q=state.q.trim().toLowerCase();
+  if(!q) return null;
+  var eids={}, mids={};
+  EDGES.forEach(function(e){
+    if(!state.on[e.g]) return;
+    var hit=e.sig.some(function(s){
+      return s[0].toLowerCase().indexOf(q)>=0 || (s[2]||"").toLowerCase().indexOf(q)>=0;
+    });
+    if(hit){ eids[e.id]=1; mids[e.from]=1; mids[e.to]=1; }
+  });
+  MODS.forEach(function(m){ if(m.id.toLowerCase().indexOf(q)>=0){ mids[m.id]=1; incident(m.id).forEach(function(e){ eids[e.id]=1; }); } });
+  return {e:eids,m:mids};
+}
+
+function applyFocus(){
+  var focus=null;
+  var q=matchQuery();
+  var active=state.sel||state.hover;
+  if(q) focus=q;
+  else if(active){
+    focus={e:{},m:{}};
+    if(active.t==="edge"){ var e=EM[active.id]; focus.e[e.id]=1; focus.m[e.from]=1; focus.m[e.to]=1; }
+    else { focus.m[active.id]=1; incident(active.id).forEach(function(x){ focus.e[x.id]=1; focus.m[x.from]=1; focus.m[x.to]=1; }); }
+  }
+  svg.classList.toggle("focusing",!!focus);
+  [].forEach.call(gEdges.children,function(g){
+    var id=g.getAttribute("data-id");
+    g.classList.toggle("hot",!!(focus&&focus.e[id]));
+    g.classList.toggle("sel",!!(state.sel&&state.sel.t==="edge"&&state.sel.id===id));
+  });
+  [].forEach.call(gNodes.children,function(g){
+    var id=g.getAttribute("data-id");
+    g.classList.toggle("hot",!!(focus&&focus.m[id]));
+    g.classList.toggle("sel",!!(state.sel&&state.sel.t==="mod"&&state.sel.id===id));
+  });
+}
+
+/* =====================================================================
+   右栏
+   ===================================================================== */
+var insp=document.getElementById("insp");
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function gvar(g){ return "var("+GROUPS[g].v+")"; }
+
+function sigRows(e){
+  return e.sig.map(function(s){
+    var tgt = s[2] && s[2]!==s[0] ? ' <span class="arw">→</span> '+esc(s[2]) : "";
+    return '<div class="sigrow"><div class="s">'+esc(s[0])+tgt+'</div>'+
+           '<div class="w">'+esc(s[1]||"1 bit")+'</div>'+
+           (s[3]?'<div class="z">'+esc(s[3])+'</div>':'')+'</div>';
+  }).join("");
+}
+function edgeBtn(e,label){
+  return '<button class="linkrow" data-edge="'+e.id+'">'+
+    '<span class="dot" style="background:'+gvar(e.g)+'"></span>'+
+    '<span class="t">'+esc(label)+'</span>'+
+    '<span class="c">'+e.sig.length+'</span></button>';
+}
+function renderInsp(){
+  var a=state.sel||state.hover;
+  if(!a){ inspDefault(); return; }
+  if(a.t==="edge"){
+    var e=EM[a.id];
+    insp.innerHTML=
+      '<p class="kicker" style="color:'+gvar(e.g)+'">'+esc(GROUPS[e.g].zh)+'</p>'+
+      '<h2><span class="mono">'+esc(e.from)+'</span> → <span class="mono">'+esc(e.to)+'</span></h2>'+
+      '<h3>'+e.sig.length+' 个信号（源端口 → 目的端口）</h3>'+sigRows(e);
+  } else {
+    var m=M[a.id];
+    var ins=EDGES.filter(function(e){return e.to===m.id;});
+    var outs=EDGES.filter(function(e){return e.from===m.id;});
+    var kindzh=m.kind==="comb"?"组合逻辑，无 clk":(m.kind==="store"?"存储阵列，时序":"时序逻辑，吃 clk / rst");
+    insp.innerHTML=
+      '<p class="kicker" style="color:'+gvar(m.g)+'">'+esc(kindzh)+'</p>'+
+      '<h2><span class="mono">'+esc(m.id)+'</span></h2>'+
+      '<p class="d" style="color:var(--muted);font-size:12px">'+esc(m.zh)+'　例化名 <span class="mono">u_'+esc(m.id)+'</span></p>'+
+      '<p class="d">'+esc(m.d)+'</p>'+
+      '<h3>输入 · '+ins.length+' 束</h3>'+
+      (ins.length?ins.map(function(e){return edgeBtn(e,"← "+e.from);}).join(""):'<p class="legend-note">无</p>')+
+      '<h3>输出 · '+outs.length+' 束</h3>'+
+      (outs.length?outs.map(function(e){return edgeBtn(e,"→ "+e.to);}).join(""):'<p class="legend-note">无</p>');
+  }
+  bindInspLinks();
+}
+function inspDefault(){
+  var rows=Object.keys(GROUPS).map(function(g){
+    var n=EDGES.filter(function(e){return e.g===g;}).length;
+    return '<button class="linkrow" data-group="'+g+'"><span class="dot" style="background:'+gvar(g)+'"></span>'+
+      '<span class="t" style="font-family:inherit">'+esc(GROUPS[g].zh)+'</span><span class="c">'+n+'</span></button>';
+  }).join("");
+  insp.innerHTML=
+    '<p class="kicker">怎么看这张图</p>'+
+    '<h2>把鼠标放到框或线上</h2>'+
+    '<p class="d">右栏会列出那一束里每一个信号：源端口名、位宽、在对端叫什么。点一下可以锁定，<span class="kbd">Esc</span> 解除。</p>'+
+    '<h3>五类连线</h3>'+rows+
+    '<h3>图形约定</h3>'+
+    '<div class="sigrow"><div class="s">▷</div><div class="w"></div><div class="z">框左下角的三角＝该模块吃时钟（时序逻辑）。id_stage、ex_stage、ctrl 是纯组合的。</div></div>'+
+    '<div class="sigrow"><div class="s">左侧色条</div><div class="w"></div><div class="z">模块在流水线里的角色配色，和它主要参与的连线同色。</div></div>'+
+    '<div class="sigrow"><div class="s">clk / rst</div><div class="w"></div><div class="z">为了不糊成一团没有画：pc_reg、if_stage、if_id_reg、regfile、id_ex_reg、ex_mem_reg、mem_stage、mem_wb_reg、cache 接 clk，rst 全接。</div></div>'+
+    '<h3>一句话总览</h3>'+
+    '<p class="d">分支在 ID 判定：id_stage 抬 br，pc_reg 装入 br_addr 并在下一拍回 br_ready，同时 if_id_reg 被冲刷。四级的 stallreq 由 ctrl 合成 6 位向量，每个流水线寄存器只读自己那两位。</p>';
+  bindInspLinks();
+}
+function bindInspLinks(){
+  [].forEach.call(insp.querySelectorAll("[data-edge]"),function(b){
+    b.addEventListener("click",function(){ select({t:"edge",id:b.getAttribute("data-edge")}); });
+  });
+  [].forEach.call(insp.querySelectorAll("[data-group]"),function(b){
+    b.addEventListener("click",function(){ toggleGroup(b.getAttribute("data-group")); });
+  });
+}
+function select(a){ state.sel=a; state.hover=null; renderInsp(); applyFocus(); }
+
+/* =====================================================================
+   事件
+   ===================================================================== */
+function hoverSet(a){
+  if(state.sel) return;
+  var same=(!a&&!state.hover)||(a&&state.hover&&a.t===state.hover.t&&a.id===state.hover.id);
+  if(same) return;
+  state.hover=a; renderInsp(); applyFocus();
+}
+gEdges.addEventListener("mouseover",function(ev){
+  var g=ev.target.closest(".edge"); if(g) hoverSet({t:"edge",id:g.getAttribute("data-id")});
+});
+gEdges.addEventListener("mouseout",function(ev){
+  if(ev.target.closest(".edge")) hoverSet(null);
+});
+gEdges.addEventListener("click",function(ev){
+  var g=ev.target.closest(".edge");
+  if(g){ ev.stopPropagation(); select({t:"edge",id:g.getAttribute("data-id")}); }
+});
+gNodes.addEventListener("mouseover",function(ev){
+  var g=ev.target.closest(".node"); if(g) hoverSet({t:"mod",id:g.getAttribute("data-id")});
+});
+gNodes.addEventListener("mouseout",function(ev){
+  if(ev.target.closest(".node")) hoverSet(null);
+});
+gNodes.addEventListener("focusin",function(ev){
+  var g=ev.target.closest(".node"); if(g) select({t:"mod",id:g.getAttribute("data-id")});
+});
+document.addEventListener("keydown",function(ev){
+  if(ev.key==="Escape"){ state.sel=null; state.hover=null; renderInsp(); applyFocus(); }
+});
+
+/* 拖框 */
+var drag=null;
+function toWorld(ev){
+  var p=svg.createSVGPoint(); p.x=ev.clientX; p.y=ev.clientY;
+  var m=svg.getScreenCTM();
+  return m?p.matrixTransform(m.inverse()):{x:0,y:0};
+}
+gNodes.addEventListener("pointerdown",function(ev){
+  var g=ev.target.closest(".node"); if(!g) return;
+  var m=M[g.getAttribute("data-id")], w=toWorld(ev);
+  drag={m:m,dx:w.x-m.x,dy:w.y-m.y,moved:false};
+  g.setPointerCapture(ev.pointerId);
+  ev.preventDefault();
+});
+window.addEventListener("pointermove",function(ev){
+  if(!drag) return;
+  var w=toWorld(ev);
+  var nx=Math.round(w.x-drag.dx), ny=Math.round(w.y-drag.dy);
+  if(Math.abs(nx-drag.m.x)+Math.abs(ny-drag.m.y)>1) drag.moved=true;
+  drag.m.x=Math.max(4,Math.min(W-drag.m.w-4,nx));
+  drag.m.y=Math.max(4,Math.min(H-drag.m.h-4,ny));
+  draw();
+});
+window.addEventListener("pointerup",function(){
+  if(drag){ if(drag.moved) saveLayout(); drag=null; }
+});
+
+/* 拖背景平移 */
+var pan=null;
+stage.addEventListener("pointerdown",function(ev){
+  if(ev.target.closest(".node")||ev.target.closest(".edge")) return;
+  pan={x:ev.clientX,y:ev.clientY,l:stage.scrollLeft,t:stage.scrollTop};
+  stage.classList.add("grabbing");
+});
+window.addEventListener("pointermove",function(ev){
+  if(!pan) return;
+  stage.scrollLeft=pan.l-(ev.clientX-pan.x);
+  stage.scrollTop=pan.t-(ev.clientY-pan.y);
+});
+window.addEventListener("pointerup",function(){ pan=null; stage.classList.remove("grabbing"); });
+stage.addEventListener("click",function(ev){
+  if(!ev.target.closest(".node")&&!ev.target.closest(".edge")){
+    state.sel=null; renderInsp(); applyFocus();
+  }
+});
+
+/* 缩放 */
+function setZoom(k){
+  state.k=Math.max(.4,Math.min(2.2,k));
+  svg.style.width=(W*state.k)+"px";
+  svg.style.height=(H*state.k)+"px";
+  document.getElementById("z-lvl").textContent=Math.round(state.k*100)+"%";
+}
+document.getElementById("z-in").addEventListener("click",function(){ setZoom(state.k*1.2); });
+document.getElementById("z-out").addEventListener("click",function(){ setZoom(state.k/1.2); });
+document.getElementById("z-fit").addEventListener("click",function(){ setZoom((stage.clientWidth-18)/W); });
+stage.addEventListener("wheel",function(ev){
+  if(!ev.ctrlKey&&!ev.metaKey) return;
+  ev.preventDefault();
+  setZoom(state.k*(ev.deltaY<0?1.1:1/1.1));
+},{passive:false});
+
+/* 工具栏 */
+var chips=document.getElementById("chips");
+function toggleGroup(g){
+  state.on[g]=state.on[g]?0:1;
+  chips.querySelector('[data-g="'+g+'"]').setAttribute("data-on",state.on[g]?1:0);
+  draw();
+}
+Object.keys(GROUPS).forEach(function(g){
+  var n=EDGES.filter(function(e){return e.g===g;}).length;
+  var b=document.createElement("button");
+  b.className="chip"; b.setAttribute("data-g",g); b.setAttribute("data-on","1");
+  b.style.color=gvar(g);
+  b.innerHTML='<span class="swatch"></span><span style="color:var(--ink-2)">'+GROUPS[g].zh+'</span><span class="n">'+n+'</span>';
+  b.addEventListener("click",function(){ toggleGroup(g); });
+  chips.appendChild(b);
+});
+function tog(id,key){
+  var b=document.getElementById(id);
+  b.addEventListener("click",function(){
+    state[key]=!state[key];
+    b.setAttribute("aria-pressed",state[key]?"true":"false");
+    draw();
+  });
+}
+tog("t-width","width"); tog("t-names","names");
+document.getElementById("find").addEventListener("input",function(){
+  state.q=this.value; applyFocus();
+});
+document.getElementById("reset").addEventListener("click",function(){
+  MODS.forEach(function(m){ m.x=m.x0; m.y=m.y0; });
+  saveLayout(); draw();
+});
+
+/* 计数 */
+document.getElementById("c-mod").textContent=MODS.length;
+document.getElementById("c-edge").textContent=EDGES.length;
+document.getElementById("c-sig").textContent=EDGES.reduce(function(a,e){return a+e.sig.length;},0);
+
+/* 起手 */
+setZoom(Math.min(1,(stage.clientWidth-18)/W));
+draw();
+inspDefault();
+})();
+</script>
+
+</body>
+</html>
