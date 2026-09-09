@@ -5,7 +5,7 @@
 电子科技大学格拉斯哥学院《数字逻辑设计及应用》课程设计。
 
 *A 16-bit RISC CPU with a 5-stage pipeline.
-board (Xilinx Zynq-7000 AP SoC). Coursework for Digital Logic Design and
+Coursework for Digital Logic Design and
 Applications, Glasgow College, UESTC.*
 
 | 文件 File | 内容 Contents |
