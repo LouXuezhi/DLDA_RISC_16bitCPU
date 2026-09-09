@@ -12,7 +12,7 @@
 //
 //  There are no operand-mux, immediate-form or write-back selects here.
 //  ID does not emit selects at all: it emits the widened 16-bit value
-//  itself on imm1/imm2/mem_offset, and re1/re2 double as the operand mux
+//  itself on imm1/imm2/ls_offset, and rs1_re/rs2_re double as the operand mux
 //  (read a register -> use it, after forwarding; do not -> use the
 //  immediate).  That drops an immediate generator and its select lines
 //  from EX.  See the Decode section of doc/ISA.md.

@@ -30,24 +30,24 @@ module cache #(
     parameter DATA_INIT = "",
     parameter LATENCY   = 1
 ) (
-    input  wire                    clk,
-    input  wire                    rst,
+    input wire clk,
+    input wire rst,
 
     // instruction side -- read only
-    input  wire                    i_re,
-    input  wire [`INSTADDRBUS_LEN] i_addr,
-    output wire [    `REGBUS_LEN] i_rdata,
-    output wire                    i_busy,
-    output wire                    i_done,
+    input  wire                    imem_re,
+    input  wire [`INSTADDRBUS_LEN] imem_addr,
+    output wire [     `REGBUS_LEN] imem_rdata,
+    output wire                    imem_busy,
+    output wire                    imem_done,
 
     // data side
-    input  wire                    d_re,
-    input  wire                    d_we,
-    input  wire [`DATAADDRBUS_LEN] d_addr,
-    input  wire [    `REGBUS_LEN] d_wdata,
-    output wire [    `REGBUS_LEN] d_rdata,
-    output wire                    d_busy,
-    output wire                    d_done
+    input  wire                    dmem_re,
+    input  wire                    dmem_we,
+    input  wire [`DATAADDRBUS_LEN] dmem_addr,
+    input  wire [     `REGBUS_LEN] dmem_wdata,
+    output wire [     `REGBUS_LEN] dmem_rdata,
+    output wire                    dmem_busy,
+    output wire                    dmem_done
 );
 
     reg [`REGBUS_LEN] imem[0:`IMEMNUM-1];
@@ -61,84 +61,84 @@ module cache #(
         if (DATA_INIT != "") $readmemh(DATA_INIT, dmem);
     end
 
-    reg [`REGBUS_LEN] i_rdata_r;
-    reg                i_pending;
-    reg                i_done_r;
-    reg [        7:0] i_cnt;
+    reg [`REGBUS_LEN] imem_rdata_r;
+    reg                imem_pending;
+    reg                imem_done_r;
+    reg [        7:0] imem_cnt;
 
-    reg [`REGBUS_LEN] d_rdata_r;
-    reg                d_pending;
-    reg                d_done_r;
-    reg [        7:0] d_cnt;
+    reg [`REGBUS_LEN] dmem_rdata_r;
+    reg                dmem_pending;
+    reg                dmem_done_r;
+    reg [        7:0] dmem_cnt;
 
-    assign i_rdata = i_rdata_r;
-    assign i_busy  = i_pending;
-    assign i_done  = i_done_r;
+    assign imem_rdata = imem_rdata_r;
+    assign imem_busy  = imem_pending;
+    assign imem_done  = imem_done_r;
 
-    assign d_rdata = d_rdata_r;
-    assign d_busy  = d_pending;
-    assign d_done  = d_done_r;
+    assign dmem_rdata = dmem_rdata_r;
+    assign dmem_busy  = dmem_pending;
+    assign dmem_done  = dmem_done_r;
 
     // instruction side
     always @(posedge clk) begin
         if (rst) begin
-            i_rdata_r <= `ZEROWORD;
-            i_pending <= 0;
-            i_done_r  <= 0;
-            i_cnt     <= 0;
-        end else if (i_pending) begin
-            if (i_cnt == 0) begin
-                i_pending <= 0;
-                i_done_r  <= 1;
+            imem_rdata_r <= `ZEROWORD;
+            imem_pending <= 0;
+            imem_done_r  <= 0;
+            imem_cnt     <= 0;
+        end else if (imem_pending) begin
+            if (imem_cnt == 0) begin
+                imem_pending <= 0;
+                imem_done_r  <= 1;
             end else begin
-                i_cnt    <= i_cnt - 1;
-                i_done_r <= 0;
+                imem_cnt    <= imem_cnt - 1;
+                imem_done_r <= 0;
             end
-        end else if (i_re) begin
-            i_rdata_r <= imem[i_addr[`IMEMIDX_LEN]];
+        end else if (imem_re) begin
+            imem_rdata_r <= imem[imem_addr[`IMEMIDX_LEN]];
             if (LATENCY <= 1) begin
-                i_pending <= 0;
-                i_done_r  <= 1;
+                imem_pending <= 0;
+                imem_done_r  <= 1;
             end else begin
-                i_pending <= 1;
-                i_done_r  <= 0;
-                i_cnt     <= LATENCY - 2;
+                imem_pending <= 1;
+                imem_done_r  <= 0;
+                imem_cnt     <= LATENCY - 2;
             end
         end else begin
-            i_done_r <= 0;
+            imem_done_r <= 0;
         end
     end
 
     // data side
     always @(posedge clk) begin
         if (rst) begin
-            d_rdata_r <= `ZEROWORD;
-            d_pending <= 0;
-            d_done_r  <= 0;
-            d_cnt     <= 0;
-        end else if (d_pending) begin
-            if (d_cnt == 0) begin
-                d_pending <= 0;
-                d_done_r  <= 1;
+            dmem_rdata_r <= `ZEROWORD;
+            dmem_pending <= 0;
+            dmem_done_r  <= 0;
+            dmem_cnt     <= 0;
+        end else if (dmem_pending) begin
+            if (dmem_cnt == 0) begin
+                dmem_pending <= 0;
+                dmem_done_r  <= 1;
             end else begin
-                d_cnt    <= d_cnt - 1;
-                d_done_r <= 0;
+                dmem_cnt    <= dmem_cnt - 1;
+                dmem_done_r <= 0;
             end
-        end else if (d_re || d_we) begin
-            if (d_we) begin
-                dmem[d_addr] <= d_wdata;
+        end else if (dmem_re || dmem_we) begin
+            if (dmem_we) begin
+                dmem[dmem_addr] <= dmem_wdata;
             end
-            d_rdata_r <= dmem[d_addr];
+            dmem_rdata_r <= dmem[dmem_addr];
             if (LATENCY <= 1) begin
-                d_pending <= 0;
-                d_done_r  <= 1;
+                dmem_pending <= 0;
+                dmem_done_r  <= 1;
             end else begin
-                d_pending <= 1;
-                d_done_r  <= 0;
-                d_cnt     <= LATENCY - 2;
+                dmem_pending <= 1;
+                dmem_done_r  <= 0;
+                dmem_cnt     <= LATENCY - 2;
             end
         end else begin
-            d_done_r <= 0;
+            dmem_done_r <= 0;
         end
     end
 

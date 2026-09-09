@@ -13,8 +13,8 @@ if code and spec disagree, fix one of them in the same commit.*
 | 置零的东西 Zeroed | 含义 Means |
 |---|---|
 | 操作码 `0000` | 什么都不做，无论其余 12 位是什么 |
-| `aluop == 6'b000000` | NOP，结果被丢弃 |
-| `reg_we` `mem_we` `mem_re` | 全部高有效，所以 0 是惰性的 |
+| `alu_op == 6'b000000` | NOP，结果被丢弃 |
+| `reg_we` `dmem_we` `dmem_re` | 全部高有效，所以 0 是惰性的 |
 | 复位或冲刷后的任何流水寄存器 | 正是它该有的气泡 |
 
 冲刷（flush）往 IF/ID 写零，暂停（stall）往 ID/EX 写零。有了这条规则，两者都是**构造上正确**
@@ -79,7 +79,7 @@ straight from the instruction word, so the read starts in parallel with decode. 
 opcode only decides whether the returned value is used — read always, decide later.*
 
 由此带来两个后果，都无害：S 格式没有 `Rd`，但 `inst[11:10]` 照读不误（`reg_we = 0`）；I 格式
-没有 `Rs2`，但读口 2 照样读 `inst[7:6]`（`re2 = 0`）。
+没有 `Rs2`，但读口 2 照样读 `inst[7:6]`（`rs2_re = 0`）。
 
 `ST` 和分支指令需要两个寄存器**外加** 8 位位移，`Rs2` 底下放不下 —— 于是高 2 位挪到 `Rd` 本
 来的位置。这个拆分花的是连线，不是门：`{inst[11:10], inst[5:0]}` 是改个名，不是一次运算。
@@ -122,17 +122,17 @@ below `Rs2` — so the top 2 bits go where `Rd` would be. The split costs wires,
 > **注意：** `JAL Rx, #0` 每转一圈都会往 `Rx` 里写一次 `PC+1`。停机用的寄存器要挑一个后面
 > 不再读的。
 
-### `aluop` 与 `alusel` · ALU op and ALU sel
+### `alu_op` 与 `alu_sel` · ALU op and ALU sel
 
-每条指令都带一个 `aluop`（ALU 做什么）和一个 `alusel`（哪个功能单元的结果写回）。ID 用一个
-`case (opcode)` 同时定下这两个；EX 先按 `alusel` 分流，再由该单元按 `aluop` 选操作。两个枚举
+每条指令都带一个 `alu_op`（ALU 做什么）和一个 `alu_sel`（哪个功能单元的结果写回）。ID 用一个
+`case (opcode)` 同时定下这两个；EX 先按 `alu_sel` 分流，再由该单元按 `alu_op` 选操作。两个枚举
 都在 [`src/define_ISA.v`](../src/define_ISA.v) 里，紧挨着 funct 码。
 
-*Every instruction carries an `aluop` (what the ALU does) and an `alusel` (which
+*Every instruction carries an `alu_op` (what the ALU does) and an `alu_sel` (which
 functional unit's result writes back). ID sets both from one `case (opcode)`; EX switches
-on `alusel`, then the unit switches on `aluop`.*
+on `alu_sel`, then the unit switches on `alu_op`.*
 
-**`aluop` 低半区 —— 就是 R 型的 `funct` 字段。** 对 `ALU` 操作码来说，这个 `funct` **本身就
+**`alu_op` 低半区 —— 就是 R 型的 `funct` 字段。** 对 `ALU` 操作码来说，这个 `funct` **本身就
 是** ALU 的控制字，所以 R 型通路不需要任何控制 ROM。带立即数的那些指令合成出同样的码。
 
 | `funct` | | `funct` | | `funct` | |
@@ -144,10 +144,10 @@ on `alusel`, then the unit switches on `aluop`.*
 
 `001100`–`001111` 保留给将来的 funct。移位量取 `b[3:0]`。
 
-**`aluop` 高半区 —— 内部使用。** 非 R 型的操作码各自带一个 `aluop`，在 ID 里从操作码译出。
+**`alu_op` 高半区 —— 内部使用。** 非 R 型的操作码各自带一个 `alu_op`，在 ID 里从操作码译出。
 它们落在 `funct` 的保留区里，所以永远不可能和一个真实的 `funct` 撞上。
 
-| `aluop` | | `aluop` | |
+| `alu_op` | | `alu_op` | |
 |---|---|---|---|
 | `010000` | `LD` | `010100` | `BLT` |
 | `010001` | `ST` | `010101` | `BGE` |
@@ -156,10 +156,10 @@ on `alusel`, then the unit switches on `aluop`.*
 
 `011000`–`111111` 保留。
 
-**`alusel`。** `SEL_NOP` 把结果按在零上，所以一个被清零的 ID/EX 寄存器自然就丢弃了结果 ——
+**`alu_sel`。** `SEL_NOP` 把结果按在零上，所以一个被清零的 ID/EX 寄存器自然就丢弃了结果 ——
 还是那条全零公理。
 
-| `alusel` | | 覆盖 Covers |
+| `alu_sel` | | 覆盖 Covers |
 |---|---|---|
 | `000` | `NOP` | `NOP` |
 | `001` | `LOGIC` | `AND` `ANDI` `OR` `ORI` `XOR` `NOR` |
@@ -229,15 +229,15 @@ wire [7:0] imm_s  = {inst[11:10], inst[5:0]};
 ```
 
 然后是一个 `case (opcode)`。**这里没有操作数选择码，也没有立即数形式选择码**：ID 直接把
-**展宽好的 16 位值本身**放在 `imm1`、`imm2`、`mem_offset` 上，而 `re1`/`re2` 兼任操作数
+**展宽好的 16 位值本身**放在 `imm1`、`imm2`、`ls_offset` 上，而 `rs1_re`/`rs2_re` 兼任操作数
 mux —— 读寄存器就由前递链供值，不读就让立即数落下来。这样 EX 里就不需要立即数生成器和它的
 选择线了。下表中的破折号表示"该端口读的是寄存器，所以立即数用不上"。
 
-*ID emits the widened 16-bit value itself on `imm1`, `imm2` and `mem_offset`, and
-`re1`/`re2` double as the operand mux. That removes an immediate generator and its select
+*ID emits the widened 16-bit value itself on `imm1`, `imm2` and `ls_offset`, and
+`rs1_re`/`rs2_re` double as the operand mux. That removes an immediate generator and its select
 lines from EX.*
 
-| | `re1` | `re2` | `we` | `aluop` | `alusel` | `imm1` → `opv1` | `imm2` → `opv2` | `mem_offset` | `br` |
+| | `rs1_re` | `rs2_re` | `reg_we` | `alu_op` | `alu_sel` | `imm1` → `op1` | `imm2` → `op2` | `ls_offset` | `br` |
 |---|---|---|---|---|---|---|---|---|---|
 | `SYS` | 0 | 0 | 0 | `NOP` | `NOP` | 0 | 0 | 0 | 0 |
 | `ALU` | 1 | 1 | 1 | `funct` | 由 `funct` 定 | — | — | 0 | 0 |
@@ -252,26 +252,26 @@ lines from EX.*
 | `JAL` | 0 | 0 | 1 | `JAL` | `JUMP_BRANCH` | 0 | 0 | 0 | 1 |
 | `JALR` | **1** | 0 | 1 | `JALR` | `JUMP_BRANCH` | — | 0 | 0 | 1 |
 
-`LD`/`ST` 走 EX 里的地址加法器，算 `opv1 + mem_offset` 再截断到 8 位 —— 这是第三条操作数
-总线，和 `opv2` 分开，这样 `SEL_LOAD_STORE` 不必去挤 ALU 的操作数通路。`JAL`/`JALR` 压根不
+`LD`/`ST` 走 EX 里的地址加法器，算 `op1 + ls_offset` 再截断到 8 位 —— 这是第三条操作数
+总线，和 `op2` 分开，这样 `SEL_LOAD_STORE` 不必去挤 ALU 的操作数通路。`JAL`/`JALR` 压根不
 用加法器：ID 手里已经有 PC，就在那里形成 `PC + 1`，作为 `link_addr` 往下带。分支解析留在 ID
-（比较器 + 目标加法器）；分支的 `aluop`/`alusel` 一路带着但用不上，除非将来把解析挪到 EX。
+（比较器 + 目标加法器）；分支的 `alu_op`/`alu_sel` 一路带着但用不上，除非将来把解析挪到 EX。
 
-**没有 `mem_re`/`mem_we` 控制位，也没有 `branch` 码。** MEM 从 `aluop == LD`/`ST` 推出访存
+**没有 `dmem_re`/`dmem_we` 控制位，也没有 `branch` 码。** MEM 从 `alu_op == LD`/`ST` 推出访存
 选通，`br` 是解析出来的结果而不是译码属性 —— 于是没有任何字段身兼两职，也就没有东西需要保持
 同步。
 
-*There is no `mem_re`/`mem_we` control bit and no `branch` code — so no field means two
+*There is no `dmem_re`/`dmem_we` control bit and no `branch` code — so no field means two
 things and nothing has to stay in sync.*
 
-1. `we` 是寄存器堆唯一在意的位，所以一个无意义的 `Rd` 是无害的。
-2. `re1`/`re2` 驱动的是**前递**和操作数 mux。一个源寄存器只有在被读的时候才构成冒险 ——
-   `ADDI` 把 `re2` 置 0，所以 `inst[7:6]` 永远不会触发检查。
+1. `reg_we` 是寄存器堆唯一在意的位，所以一个无意义的 `Rd` 是无害的。
+2. `rs1_re`/`rs2_re` 驱动的是**前递**和操作数 mux。一个源寄存器只有在被读的时候才构成冒险 ——
+   `ADDI` 把 `rs2_re` 置 0，所以 `inst[7:6]` 永远不会触发检查。
 3. `LD` 是唯一写回来源是内存的指令。load-use 检测器提前一级看的就是这一位。
 4. `link_addr` 在流水线上是一个独立字段，EX 在 `SEL_JUMP_BRANCH` 下把它送到 `reg_wdata`。
    写回 mux 保持两路。
 
-`JALR` 把 `re1` 置 1，是因为它的**目标**需要 `R[Rs1]`。这个值送进 ID 的分支目标加法器，像
+`JALR` 把 `rs1_re` 置 1，是因为它的**目标**需要 `R[Rs1]`。这个值送进 ID 的分支目标加法器，像
 任何一次 ID 读一样接受前递；一条 `LD` 后面紧跟 `JALR` 就是一次 load-use 暂停。
 
 分支目标，一个 16 位加法器加输入端的 mux：
@@ -280,7 +280,7 @@ things and nothing has to stay in sync.*
 |---|---|---|
 | 分支 branches | `PC` | `sext8(imm_s)` |
 | `JAL` | `PC` | `sext8(imm_i)` |
-| `JALR` | `R[Rs1]` 前递后的值，即 `opv1` | `sext8(imm_i)` |
+| `JALR` | `R[Rs1]` 前递后的值，即 `op1` | `sext8(imm_i)` |
 
 `JAL` 和分支两个输入都一样，区别只在于立即数是怎么拆的；`JALR` 是唯一换掉 `a` 的那个。
 
@@ -289,11 +289,11 @@ things and nothing has to stay in sync.*
 对每个源寄存器，从最新的产生者往回找：
 
 ```verilog
-if      (re && ex_is_load && ex_waddr == addr)  stallreq = 1;   // load-use
-else if (re && ex_we      && ex_waddr == addr)  opv = ex_reg_wdata;
-else if (re && mem_we     && mem_waddr == addr) opv = mem_reg_wdata;
-else if (re)                                    opv = reg_data;
-else                                            opv = imm;
+if      (re && prev_is_load     && fwd_ex_reg_waddr  == raddr) stallreq = 1;  // load-use
+else if (re && fwd_ex_reg_we   && fwd_ex_reg_waddr  == raddr) op = fwd_ex_reg_wdata;
+else if (re && fwd_mem_reg_we  && fwd_mem_reg_waddr == raddr) op = fwd_mem_reg_wdata;
+else if (re)                                                  op = rdata;
+else                                                          op = imm;
 ```
 
 `re` 把整条链都门控住了，所以 `LI`、`LUI`、`JAL` 永远不会暂停。load-use 是前递唯一救不了的

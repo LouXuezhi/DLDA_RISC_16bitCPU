@@ -5,82 +5,82 @@
 module mem_stage (
     input  wire                    clk,
     input  wire                    rst,
-    input  wire [`REGADDRBUS_LEN] reg_waddr_i,
-    input  wire                    we_i,
-    input  wire [    `REGBUS_LEN] reg_wdata_i,
-    input  wire [`DATAADDRBUS_LEN] mem_addr_i,
-    input  wire [  `ALUOPBUS_LEN] aluop_i,
-    input  wire [    `REGBUS_LEN] rs2_data_i,
-    input  wire                    mem_busy,
-    input  wire                    mem_done,
-    input  wire [    `REGBUS_LEN] mem_data_i,
-    output reg  [`REGADDRBUS_LEN] reg_waddr_o,
-    output reg                     we_o,
-    output reg  [    `REGBUS_LEN] reg_wdata_o,
-    output reg                     mem_re,
-    output reg                     mem_we,
-    output reg  [    `REGBUS_LEN] mem_data_o,
-    output reg  [`DATAADDRBUS_LEN] mem_addr_o,
+    input  wire [ `REGADDRBUS_LEN] reg_waddr_i,
+    input  wire                    reg_we_i,
+    input  wire [     `REGBUS_LEN] reg_wdata_i,
+    input  wire [`DATAADDRBUS_LEN] ls_addr,
+    input  wire [   `ALUOPBUS_LEN] alu_op,
+    input  wire [     `REGBUS_LEN] st_data,
+    input  wire                    dmem_busy,
+    input  wire                    dmem_done,
+    input  wire [     `REGBUS_LEN] dmem_rdata,
+    output reg  [ `REGADDRBUS_LEN] reg_waddr_o,
+    output reg                     reg_we_o,
+    output reg  [     `REGBUS_LEN] reg_wdata_o,
+    output reg                     dmem_re,
+    output reg                     dmem_we,
+    output reg  [     `REGBUS_LEN] dmem_wdata,
+    output reg  [`DATAADDRBUS_LEN] dmem_addr,
     output reg                     stallreq
 );
 
-    reg mem_taking;
-    reg mem_taking_next;
+    reg dmem_taking;
+    reg dmem_taking_next;
 
-`define SET_MEM_INST(i_stallreq,i_mem_taking,i_mem_re,i_mem_we,i_mem_addr_o,i_mem_data_o)\
+`define SET_MEM_INST(i_stallreq,i_dmem_taking,i_dmem_re,i_dmem_we,i_dmem_addr,i_dmem_wdata)\
     stallreq        = i_stallreq;\
-    mem_taking_next = i_mem_taking;\
-    mem_re          = i_mem_re;\
-    mem_we          = i_mem_we;\
-    mem_addr_o      = i_mem_addr_o;\
-    mem_data_o      = i_mem_data_o;
+    dmem_taking_next = i_dmem_taking;\
+    dmem_re          = i_dmem_re;\
+    dmem_we          = i_dmem_we;\
+    dmem_addr      = i_dmem_addr;\
+    dmem_wdata      = i_dmem_wdata;
 
     always @(posedge clk) begin
         if (rst) begin
-            mem_taking <= 0;
+            dmem_taking <= 0;
         end else begin
-            mem_taking <= mem_taking_next;
+            dmem_taking <= dmem_taking_next;
         end
     end
 
     always @(*) begin
-        mem_taking_next = mem_taking;
-        mem_re          = 0;
-        mem_we          = 0;
-        mem_addr_o      = 0;
-        mem_data_o      = 0;
+        dmem_taking_next = dmem_taking;
+        dmem_re          = 0;
+        dmem_we          = 0;
+        dmem_addr      = 0;
+        dmem_wdata      = 0;
         stallreq        = 0;
 
         reg_waddr_o     = reg_waddr_i;
-        we_o            = we_i;
+        reg_we_o            = reg_we_i;
         reg_wdata_o     = reg_wdata_i;
 
         if (rst) begin
             `SET_MEM_INST(0, 0, 0, 0, 0, 0)
             reg_waddr_o = 0;
-            we_o        = 0;
+            reg_we_o        = 0;
             reg_wdata_o = 0;
-        end else if (!mem_busy && !mem_taking) begin
+        end else if (!dmem_busy && !dmem_taking) begin
             reg_waddr_o = reg_waddr_i;
-            we_o        = we_i;
-            case (aluop_i)
+            reg_we_o        = reg_we_i;
+            case (alu_op)
                 `ALU_LD: begin
-                    `SET_MEM_INST(1, 1, 1, 0, mem_addr_i, 0)
+                    `SET_MEM_INST(1, 1, 1, 0, ls_addr, 0)
                 end
                 `ALU_ST: begin
-                    `SET_MEM_INST(1, 1, 0, 1, mem_addr_i, rs2_data_i)
+                    `SET_MEM_INST(1, 1, 0, 1, ls_addr, st_data)
                 end
                 default: begin
                     `SET_MEM_INST(0, 0, 0, 0, 0, 0)
                     reg_wdata_o = reg_wdata_i;
                 end
             endcase
-        end else if (!mem_busy && mem_taking) begin
+        end else if (!dmem_busy && dmem_taking) begin
             stallreq        = 0;
-            mem_taking_next = 0;
-            case (aluop_i)
+            dmem_taking_next = 0;
+            case (alu_op)
                 `ALU_LD: begin
-                    reg_wdata_o = mem_data_i;
+                    reg_wdata_o = dmem_rdata;
                 end
                 default: begin
                 end

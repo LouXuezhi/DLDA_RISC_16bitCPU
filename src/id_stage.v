@@ -6,33 +6,33 @@ module id_stage (
     input wire                    rst,
     input wire [`INSTADDRBUS_LEN] pc,
     input wire [    `INSTBUS_LEN] inst,
-    input wire [     `REGBUS_LEN] reg_data1,
-    input wire [     `REGBUS_LEN] reg_data2,
+    input wire [     `REGBUS_LEN] rs1_rdata,
+    input wire [     `REGBUS_LEN] rs2_rdata,
 
-    input wire [  `ALUOPBUS_LEN] ex_aluop,
-    input wire                   ex_we,
-    input wire [`REGADDRBUS_LEN] ex_reg_waddr,
-    input wire [    `REGBUS_LEN] ex_reg_wdata,
+    input wire [  `ALUOPBUS_LEN] fwd_ex_alu_op,
+    input wire                   fwd_ex_reg_we,
+    input wire [`REGADDRBUS_LEN] fwd_ex_reg_waddr,
+    input wire [    `REGBUS_LEN] fwd_ex_reg_wdata,
 
-    input  wire                    mem_we,
-    input  wire [     `REGBUS_LEN] mem_reg_wdata,
+    input  wire                    fwd_mem_reg_we,
+    input  wire [     `REGBUS_LEN] fwd_mem_reg_wdata,
     // [1:0] | 4 address
-    input  wire [ `REGADDRBUS_LEN] mem_reg_waddr,
-    output reg                     re1,
-    output reg                     re2,
-    output reg  [ `REGADDRBUS_LEN] reg_addr1,
-    output reg  [ `REGADDRBUS_LEN] reg_addr2,
-    output reg  [   `ALUOPBUS_LEN] aluop,
-    output reg  [  `ALUSELBUS_LEN] alusel,
-    output reg  [     `REGBUS_LEN] opv1,
-    output reg  [     `REGBUS_LEN] opv2,
+    input  wire [ `REGADDRBUS_LEN] fwd_mem_reg_waddr,
+    output reg                     rs1_re,
+    output reg                     rs2_re,
+    output reg  [ `REGADDRBUS_LEN] rs1_raddr,
+    output reg  [ `REGADDRBUS_LEN] rs2_raddr,
+    output reg  [   `ALUOPBUS_LEN] alu_op,
+    output reg  [  `ALUSELBUS_LEN] alu_sel,
+    output reg  [     `REGBUS_LEN] op1,
+    output reg  [     `REGBUS_LEN] op2,
     output reg  [ `REGADDRBUS_LEN] reg_waddr,
-    output reg                     we,
+    output reg                     reg_we,
     output wire                    stallreq,
     output reg                     br,
     output reg  [`INSTADDRBUS_LEN] br_addr,
     output reg  [`INSTADDRBUS_LEN] link_addr,
-    output reg  [     `REGBUS_LEN] mem_offset
+    output reg  [     `REGBUS_LEN] ls_offset
 );
 
   wire [`F_OPCODE] opcode = inst[`F_OPCODE];
@@ -47,50 +47,50 @@ module id_stage (
   wire [`F_RS1] rs1_addr = inst[`F_RS1];
   wire [`F_RS2] rs2_addr = inst[`F_RS2];
 
-  reg  stallreq_for_reg1_load;
-  reg  stallreq_for_reg2_load;
-  assign stallreq = stallreq_for_reg1_load || stallreq_for_reg2_load;
+  reg  stallreq_rs1_load;
+  reg  stallreq_rs2_load;
+  assign stallreq = stallreq_rs1_load || stallreq_rs2_load;
 
   wire prev_is_load;
-  assign prev_is_load = (ex_aluop == `ALU_LD);
+  assign prev_is_load = (fwd_ex_alu_op == `ALU_LD);
 
-  wire [`INSTADDRBUS_LEN] reg1_plus_I_imm;
-  wire [`INSTADDRBUS_LEN] pc_plus_I_imm;
-  wire [`INSTADDRBUS_LEN] pc_plus_S_imm;
+  wire [`INSTADDRBUS_LEN] rs1_plus_imm_i;
+  wire [`INSTADDRBUS_LEN] pc_plus_imm_i;
+  wire [`INSTADDRBUS_LEN] pc_plus_imm_s;
   wire [`INSTADDRBUS_LEN] pc_plus_1;
 
-  assign reg1_plus_I_imm = opv1 + {{8{imm_i[7]}}, imm_i};
-  assign pc_plus_S_imm   = pc + {{8{imm_s[7]}}, imm_s};
-  assign pc_plus_I_imm   = pc + {{8{imm_i[7]}}, imm_i};
+  assign rs1_plus_imm_i = op1 + {{8{imm_i[7]}}, imm_i};
+  assign pc_plus_imm_s   = pc + {{8{imm_s[7]}}, imm_s};
+  assign pc_plus_imm_i   = pc + {{8{imm_i[7]}}, imm_i};
   assign pc_plus_1       = pc + 1;
 
-  wire reg1_reg2_eq;
-  wire reg1_reg2_ne;
-  wire reg1_reg2_lt;
-  wire reg1_reg2_ge;
+  wire cmp_eq;
+  wire cmp_ne;
+  wire cmp_lt;
+  wire cmp_ge;
 
-  assign reg1_reg2_eq = (opv1 == opv2);
-  assign reg1_reg2_ne = (opv1 != opv2);
-  assign reg1_reg2_lt = ($signed(opv1) < $signed(opv2));
-  assign reg1_reg2_ge = ($signed(opv1) >= $signed(opv2));
+  assign cmp_eq = (op1 == op2);
+  assign cmp_ne = (op1 != op2);
+  assign cmp_lt = ($signed(op1) < $signed(op2));
+  assign cmp_ge = ($signed(op1) >= $signed(op2));
 
   // verilog_format: off
   // The formal-parameter list of a `define must stay on one physical line:
   // splitting it is outside what the standard guarantees, and Vivado's
   // preprocessor is stricter about it than iverilog/verilator.
-  `define SET_INST(i_alusel, i_aluop, i_inst_valid, i_re1, i_re2, i_reg_addr1, i_reg_addr2, i_we, i_reg_waddr, i_imm1, i_imm2, i_mem_offset)\
-    aluop      = i_aluop;\
-    alusel     = i_alusel;\
+  `define SET_INST(i_alu_sel, i_alu_op, i_inst_valid, i_rs1_re, i_rs2_re, i_rs1_raddr, i_rs2_raddr, i_reg_we, i_reg_waddr, i_imm1, i_imm2, i_ls_offset)\
+    alu_op      = i_alu_op;\
+    alu_sel     = i_alu_sel;\
     inst_valid = i_inst_valid;\
-    re1        = i_re1;\
-    re2        = i_re2;\
-    reg_addr1  = i_reg_addr1;\
-    reg_addr2  = i_reg_addr2;\
-    we         = i_we;\
+    rs1_re        = i_rs1_re;\
+    rs2_re        = i_rs2_re;\
+    rs1_raddr  = i_rs1_raddr;\
+    rs2_raddr  = i_rs2_raddr;\
+    reg_we         = i_reg_we;\
     reg_waddr  = i_reg_waddr;\
     imm1       = i_imm1;\
     imm2       = i_imm2;\
-    mem_offset = i_mem_offset;
+    ls_offset = i_ls_offset;
   // imm1 imm2 are used to store the immediate value,
   // which is used to calculate the address of the memory.
 
@@ -124,39 +124,39 @@ module id_stage (
 
         `OP_JAL: begin
           `SET_INST(`SEL_JUMP_BRANCH, `ALU_JAL, 1, 0, 0, 0, 0, 1, rd_addr, 0, 0, 0)
-          `SET_BRANCH(1, pc_plus_I_imm, pc_plus_1)
+          `SET_BRANCH(1, pc_plus_imm_i, pc_plus_1)
         end
 
         `OP_JALR: begin
           `SET_INST(`SEL_JUMP_BRANCH, `ALU_JALR, 1, 1, 0, rs1_addr, 0, 1, rd_addr, 0, 0, 0)
-          `SET_BRANCH(1, reg1_plus_I_imm, pc_plus_1)
+          `SET_BRANCH(1, rs1_plus_imm_i, pc_plus_1)
         end
-        // i_alusel,i_aluop,i_inst_valid,i_re1,i_re2,i_reg_addr1,i_reg_addr2,i_we,i_reg_waddr,i_imm1,i_imm2,i_mem_offset
+        // i_alu_sel,i_alu_op,i_inst_valid,i_rs1_re,i_rs2_re,i_rs1_raddr,i_rs2_raddr,i_reg_we,i_reg_waddr,i_imm1,i_imm2,i_ls_offset
         `OP_BEQ: begin
           `SET_INST(`SEL_JUMP_BRANCH, `ALU_BEQ, 1, 1, 1, rs1_addr, rs2_addr, 0, rd_addr, 0, 0, 0)
-          if (reg1_reg2_eq) begin
-            `SET_BRANCH(1, pc_plus_S_imm, 0)
+          if (cmp_eq) begin
+            `SET_BRANCH(1, pc_plus_imm_s, 0)
           end
         end
 
         `OP_BNE: begin
           `SET_INST(`SEL_JUMP_BRANCH, `ALU_BNE, 1, 1, 1, rs1_addr, rs2_addr, 0, rd_addr, 0, 0, 0)
-          if (reg1_reg2_ne) begin
-            `SET_BRANCH(1, pc_plus_S_imm, 0)
+          if (cmp_ne) begin
+            `SET_BRANCH(1, pc_plus_imm_s, 0)
           end
         end
 
         `OP_BLT: begin
           `SET_INST(`SEL_JUMP_BRANCH, `ALU_BLT, 1, 1, 1, rs1_addr, rs2_addr, 0, rd_addr, 0, 0, 0)
-          if (reg1_reg2_lt) begin
-            `SET_BRANCH(1, pc_plus_S_imm, 0)
+          if (cmp_lt) begin
+            `SET_BRANCH(1, pc_plus_imm_s, 0)
           end
         end
 
         `OP_BGE: begin
           `SET_INST(`SEL_JUMP_BRANCH, `ALU_BGE, 1, 1, 1, rs1_addr, rs2_addr, 0, rd_addr, 0, 0, 0)
-          if (reg1_reg2_ge) begin
-            `SET_BRANCH(1, pc_plus_S_imm, 0)
+          if (cmp_ge) begin
+            `SET_BRANCH(1, pc_plus_imm_s, 0)
           end
         end
 
@@ -228,30 +228,30 @@ module id_stage (
     end
   end
 
-  `define SET_OPV(opv, re, regaddr, reg_data, imm, stallreq)\
+  `define SET_OPV(op, re, raddr, rdata, imm, stallreq)\
     stallreq = 0;\
     if (rst) begin\
-        opv = 0;\
-    end else if (re && prev_is_load && (ex_reg_waddr == regaddr)) begin\
+        op = 0;\
+    end else if (re && prev_is_load && (fwd_ex_reg_waddr == raddr)) begin\
         stallreq = 1;\
-    end else if (re && ex_we && (ex_reg_waddr == regaddr)) begin\
-        opv = ex_reg_wdata;\
-    end else if (re && mem_we && (mem_reg_waddr == regaddr)) begin\
-        opv = mem_reg_wdata;\
+    end else if (re && fwd_ex_reg_we && (fwd_ex_reg_waddr == raddr)) begin\
+        op = fwd_ex_reg_wdata;\
+    end else if (re && fwd_mem_reg_we && (fwd_mem_reg_waddr == raddr)) begin\
+        op = fwd_mem_reg_wdata;\
     end else if (re) begin\
-        opv = reg_data;\
+        op = rdata;\
     end else if (!re) begin\
-        opv = imm;\
+        op = imm;\
     end else begin\
-        opv = 0;\
+        op = 0;\
     end
   // forwarding logic.  If the previous instruction is a load the data is not
   // ready yet, so stall; otherwise forward from EX or MEM.
   always @(*) begin
-    `SET_OPV(opv1, re1, reg_addr1, reg_data1, imm1, stallreq_for_reg1_load)
+    `SET_OPV(op1, rs1_re, rs1_raddr, rs1_rdata, imm1, stallreq_rs1_load)
   end
   always @(*) begin
-    `SET_OPV(opv2, re2, reg_addr2, reg_data2, imm2, stallreq_for_reg2_load)
+    `SET_OPV(op2, rs2_re, rs2_raddr, rs2_rdata, imm2, stallreq_rs2_load)
   end
 
 endmodule

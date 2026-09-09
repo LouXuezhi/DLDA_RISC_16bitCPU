@@ -66,7 +66,7 @@
 `define OP_JALR 4'b1110         // Rd = PC+1; PC = Rs1 + sext8(imm)
 //                   4'b1111         reserved
 
-//---- aluop, low half == R-type funct.  For OP_ALU this IS the control --
+//---- alu_op, low half == R-type funct.  For OP_ALU this IS the control --
 //     word, so the R-type path needs no control ROM.  Width `ALUOPBUS_LEN.
 //     The trailing tag is the `SEL_* result category EX routes it to.
 `define ALU_NOP 6'b000000       // result discarded          -- SEL_NOP
@@ -83,7 +83,7 @@
 `define ALU_SRA 6'b001011       // a >>> b[3:0], sign-filled  -- SEL_SHIFT
 //                   6'b001100 .. 6'b001111   reserved for future funct
 
-//---- aluop, high half.  The non-R opcodes carry their own aluop, decoded
+//---- alu_op, high half.  The non-R opcodes carry their own alu_op, decoded
 //     from `F_OPCODE in ID.  These sit in funct's reserved range and can
 //     never appear as a real funct.
 `define ALU_LD 6'b010000       // LD    -- EX adds R[Rs1] + sext8(imm)  -- SEL_LOAD_STORE
@@ -96,8 +96,8 @@
 `define ALU_JALR 6'b010111       // JALR  -- EX forms the link value PC+1 -- SEL_JUMP_BRANCH
 //                   6'b011000 .. 6'b111111   reserved
 
-//---- alusel.  Which functional unit's result writes back.  EX switches
-//     on this, then the unit switches on aluop.  SEL_NOP holds the result
+//---- alu_sel.  Which functional unit's result writes back.  EX switches
+//     on this, then the unit switches on alu_op.  SEL_NOP holds the result
 //     at zero, so a zeroed ID/EX register discards it -- the zeros axiom.
 `define ALUSELBUS_LEN 2:0
 `define SEL_NOP 3'b000            // NOP

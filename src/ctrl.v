@@ -4,11 +4,11 @@
 
 module ctrl (
     input  wire                 rst,
-    input  wire                 stallreq_if,
-    input  wire                 stallreq_id,
-    input  wire                 stallreq_ex,
-    input  wire                 stallreq_mem,
-    output reg  [`STALLBUS_LEN] stall
+    input  wire                 if_stallreq,
+    input  wire                 id_stallreq,
+    input  wire                 ex_stallreq,
+    input  wire                 mem_stallreq,
+    output reg  [`STALLBUS_LEN] ctrl_stall
 );
 
     // A request from stage N freezes N and everything upstream of it; the
@@ -16,17 +16,17 @@ module ctrl (
     // bubble.  Index order is `STALL_PC .. `STALL_WB, see define_ctrl.v.
     always @(*) begin
         if (rst) begin
-            stall = `NOSTALL;
-        end else if (stallreq_mem) begin
-            stall = 6'b011111;
-        end else if (stallreq_ex) begin
-            stall = 6'b001111;
-        end else if (stallreq_id) begin
-            stall = 6'b000111;
-        end else if (stallreq_if) begin
-            stall = 6'b000011;
+            ctrl_stall = `NOSTALL;
+        end else if (mem_stallreq) begin
+            ctrl_stall = 6'b011111;
+        end else if (ex_stallreq) begin
+            ctrl_stall = 6'b001111;
+        end else if (id_stallreq) begin
+            ctrl_stall = 6'b000111;
+        end else if (if_stallreq) begin
+            ctrl_stall = 6'b000011;
         end else begin
-            stall = `NOSTALL;
+            ctrl_stall = `NOSTALL;
         end
     end
 

@@ -5,44 +5,44 @@
 module id_ex_reg (
     input  wire                    clk,
     input  wire                    rst,
-    input  wire [  `ALUOPBUS_LEN] id_aluop,
-    input  wire [ `ALUSELBUS_LEN] id_alusel,
-    input  wire [    `REGBUS_LEN] id_opv1,
-    input  wire [    `REGBUS_LEN] id_opv2,
-    input  wire [`REGADDRBUS_LEN] id_reg_waddr,
-    input  wire                    id_we,
-    input  wire [  `STALLBUS_LEN] stall,
+    input  wire [   `ALUOPBUS_LEN] id_alu_op,
+    input  wire [  `ALUSELBUS_LEN] id_alu_sel,
+    input  wire [     `REGBUS_LEN] id_op1,
+    input  wire [     `REGBUS_LEN] id_op2,
+    input  wire [ `REGADDRBUS_LEN] id_reg_waddr,
+    input  wire                    id_reg_we,
+    input  wire [   `STALLBUS_LEN] ctrl_stall,
     input  wire [`INSTADDRBUS_LEN] id_link_addr,
-    input  wire [    `REGBUS_LEN] id_mem_offset,
-    output reg  [  `ALUOPBUS_LEN] ex_aluop,
-    output reg  [ `ALUSELBUS_LEN] ex_alusel,
-    output reg  [    `REGBUS_LEN] ex_opv1,
-    output reg  [    `REGBUS_LEN] ex_opv2,
-    output reg  [`REGADDRBUS_LEN] ex_reg_waddr,
-    output reg                     ex_we,
+    input  wire [     `REGBUS_LEN] id_ls_offset,
+    output reg  [   `ALUOPBUS_LEN] ex_alu_op,
+    output reg  [  `ALUSELBUS_LEN] ex_alu_sel,
+    output reg  [     `REGBUS_LEN] ex_op1,
+    output reg  [     `REGBUS_LEN] ex_op2,
+    output reg  [ `REGADDRBUS_LEN] ex_reg_waddr,
+    output reg                     ex_reg_we,
     output reg  [`INSTADDRBUS_LEN] ex_link_addr,
-    output reg  [    `REGBUS_LEN] ex_mem_offset
+    output reg  [     `REGBUS_LEN] ex_ls_offset
 );
 
     always @(posedge clk) begin
-        if (rst || (stall[`STALL_ID] && !stall[`STALL_EX])) begin
-            ex_aluop      <= `ALU_NOP;
-            ex_alusel     <= `SEL_NOP;
-            ex_opv1       <= 0;
-            ex_opv2       <= 0;
+        if (rst || (ctrl_stall[`STALL_ID] && !ctrl_stall[`STALL_EX])) begin
+            ex_alu_op      <= `ALU_NOP;
+            ex_alu_sel     <= `SEL_NOP;
+            ex_op1       <= 0;
+            ex_op2       <= 0;
             ex_reg_waddr  <= 0;
-            ex_we         <= 0;
+            ex_reg_we         <= 0;
             ex_link_addr  <= 0;
-            ex_mem_offset <= 0;
-        end else if (!stall[`STALL_ID]) begin
-            ex_aluop      <= id_aluop;
-            ex_alusel     <= id_alusel;
-            ex_opv1       <= id_opv1;
-            ex_opv2       <= id_opv2;
+            ex_ls_offset <= 0;
+        end else if (!ctrl_stall[`STALL_ID]) begin
+            ex_alu_op      <= id_alu_op;
+            ex_alu_sel     <= id_alu_sel;
+            ex_op1       <= id_op1;
+            ex_op2       <= id_op2;
             ex_reg_waddr  <= id_reg_waddr;
-            ex_we         <= id_we;
+            ex_reg_we         <= id_reg_we;
             ex_link_addr  <= id_link_addr;
-            ex_mem_offset <= id_mem_offset;
+            ex_ls_offset <= id_ls_offset;
         end
     end
 
