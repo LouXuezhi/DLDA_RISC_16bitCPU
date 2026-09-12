@@ -234,6 +234,7 @@ module id_stage (
         op = 0;\
     end else if (re && prev_is_load && (fwd_ex_reg_waddr == raddr)) begin\
         stallreq = 1;\
+        op = 0;\
     end else if (re && fwd_ex_reg_we && (fwd_ex_reg_waddr == raddr)) begin\
         op = fwd_ex_reg_wdata;\
     end else if (re && fwd_mem_reg_we && (fwd_mem_reg_waddr == raddr)) begin\

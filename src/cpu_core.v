@@ -38,8 +38,10 @@ module cpu_core #(
     //---- IF -> IF/ID ----------------------------------------------------
     wire [`INSTADDRBUS_LEN] if_pc;
     wire [    `INSTBUS_LEN] if_inst;
+    wire                    if_valid;
     wire [`INSTADDRBUS_LEN] id_pc;
     wire [    `INSTBUS_LEN] id_inst;
+    wire                    id_valid;
 
     //---- ID -> ID/EX ----------------------------------------------------
     wire                     id_rs1_re;
@@ -129,11 +131,12 @@ module cpu_core #(
         .imem_busy  (imem_busy),
         .imem_done  (imem_done),
         .id_br      (id_br),
-        .pc_br_ready(pc_br_ready),
+        .ds_stall   (ctrl_stall[`STALL_ID]),
         .imem_re    (imem_re),
         .imem_addr  (imem_addr),
         .if_pc      (if_pc),
         .if_inst    (if_inst),
+        .if_valid   (if_valid),
         .stallreq   (if_stallreq)
     );
 
@@ -142,10 +145,12 @@ module cpu_core #(
         .clk       (clk),
         .if_pc     (if_pc),
         .if_inst   (if_inst),
+        .if_valid  (if_valid),
         .ctrl_stall(ctrl_stall),
         .id_br     (id_br),
         .id_pc     (id_pc),
-        .id_inst   (id_inst)
+        .id_inst   (id_inst),
+        .id_valid  (id_valid)
     );
 
     id_stage u_id_stage (

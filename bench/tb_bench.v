@@ -45,7 +45,7 @@ module tb_bench;
     wire                 issuing   = !stall[`STALL_ID] && (inst != `ZEROWORD);
     wire                 halting   = dut.id_br && (dut.id_br_addr == dut.id_pc);
     //  唯一一个伸进级内部的探针：IF 等待 PC 改向的那个状态。
-    wire                 br_wait_s = dut.u_if_stage.waiting_for_br_ready;
+    wire                 br_wait_s = dut.u_if_stage.br_wait;
 
     //---- 计数器 ---------------------------------------------------------
     integer cycles, insts;
