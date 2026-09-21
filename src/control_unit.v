@@ -9,8 +9,8 @@
 //  data it sees are the two branch flags, and those touch only pc_sel.
 //
 //  Every output is first set to 0 -- all zeros means nothing happens --
-//  and each opcode raises only what it needs.  NOP and the reserved
-//  opcode 1111 therefore fall through as all zeros.
+//  and each opcode raises only what it needs.  NOP, the reserved opcode
+//  1111 and reset therefore all give the all-zero word: nothing written.
 //
 //    opcode  reg_we mem_we src_a src_b imm_sel  alu_op  wb_sel pc_sel
 //    SYS       0      0    REG   REG   SEXT_I   NOP     ALU    PLUS1
@@ -31,6 +31,7 @@
 //=========================================================================
 
 module control_unit (
+    input  wire                   rst,
     input  wire [   `INSTBUS_LEN] inst,
     input  wire                   eq,
     input  wire                   lt,
@@ -58,7 +59,7 @@ module control_unit (
         wb_sel  = `WB_ALU;
         pc_sel  = `PC_PLUS1;
 
-        case (opcode)
+        if (!rst) case (opcode)
             `OP_ALU: begin
                 reg_we = funct_ok;
                 alu_op = funct;

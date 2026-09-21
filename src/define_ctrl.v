@@ -12,6 +12,12 @@
 //  steps the PC by one.  That is the zeros axiom, see doc/ISA.md.
 //=========================================================================
 
+//---- word-addressed: the next instruction is always PC + 1 --------------
+`define PC_STEP 16'd1
+
+//---- the 3-way selects below feed mux3.v, which picks d0/d1/d2 for codes
+//     0/1/2 in the order the codes are listed.
+
 //---- ALU operand A: a register, or zero (LI, LUI) ----------------------
 `define SRCA_REG 1'b0
 `define SRCA_ZERO 1'b1

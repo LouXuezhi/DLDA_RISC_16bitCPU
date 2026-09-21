@@ -1,8 +1,14 @@
 # 测试 · Testbench
 
-`cpu_core` 的测试放在这里。目前还是空的。
+`cpu_core` 的测试放在这里。
 
-*Tests for `cpu_core`. Nothing here yet — this is where they go.*
+| 文件 | 用途 |
+|---|---|
+| `tb_core.v` | 每条指令打印一行 commit，由 `verif/run.py` 驱动并和 ISS 逐条比对（`make verify`） |
+| `tb_addi_wave.v` | 跑一条 `ADDI`，导出波形（`make wave`） |
+
+*`tb_core.v` prints one commit line per instruction for `verif/run.py`; `tb_addi_wave.v`
+dumps a waveform.*
 
 ## 怎么跑 · Running one
 

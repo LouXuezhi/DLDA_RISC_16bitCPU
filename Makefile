@@ -2,7 +2,8 @@
 #
 #   make sim              跑仿真，生成 addi.vcd
 #   make sim TB=<file>    换一个 testbench（默认 testbench/tb_addi_wave.v）
-#   make test             跑 testbench/ 下的全部测试程序
+#   make test             跑波形示例 testbench
+#   make verify           RTL 与 Python ISS 逐条比对：bench 程序 + 随机程序
 #   make bench            跑统一 benchmark，和 bench/baseline.csv 比
 #   make bench-baseline   把这次的结果存成新基线（改进之前先存一次）
 #   make bench-asm        重新汇编 bench/prog/*.s -> .hex
@@ -34,7 +35,7 @@ TB       ?= testbench/tb_addi_wave.v
 VCD      := addi.vcd
 BUILD    := build
 
-.PHONY: sim test bench bench-baseline bench-asm wave serve stop url lint clean help
+.PHONY: sim test verify bench bench-baseline bench-asm wave serve stop url lint clean help
 .DEFAULT_GOAL := help
 
 $(BUILD):
@@ -45,15 +46,20 @@ sim: | $(BUILD)
 	@./$(BUILD)/sim
 	@echo && ls -lh $(VCD)
 
-# testbench/ 下每个 tb_*.v 各跑一遍。程序和期望值写在各自的 testbench 里。
+# 波形示例 testbench。逐条比对用 make verify（tb_core.v 由 verif/run.py 驱动）。
 test: | $(BUILD)
 	@fail=0; \
-	for tb in testbench/tb_*.v; do \
+	for tb in testbench/tb_addi_wave.v; do \
 	  echo "=== $$tb ==="; \
 	  $(IVERILOG) -g2005 -Isrc -o $(BUILD)/t.out $$tb $(SRC) 2>&1 | grep -v "Not enough words" || true; \
 	  ./$(BUILD)/t.out 2>&1 | grep -v "^WARNING\|^VCD" || fail=1; \
 	done; \
 	if [ $$fail -eq 0 ]; then echo && echo "全部跑完"; else echo && echo "有失败"; exit 1; fi
+
+# RTL 与 verif/model/iss.py 逐条比对。随机程序数用 N= 改。
+N ?= 200
+verify:
+	@python3 verif/run.py --random $(N)
 
 # 统一 benchmark：一次跑完所有核，出周期数和 CPI。
 # 核和期望值写在 bench/bench.list，怎么加一个见 bench/README.md。
@@ -105,4 +111,4 @@ clean:
 	rm -f $(VCD) *.vcd
 
 help:
-	@sed -n "2,14p" $(MAKEFILE_LIST)
+	@sed -n "2,15p" $(MAKEFILE_LIST)
