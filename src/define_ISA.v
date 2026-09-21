@@ -8,8 +8,8 @@
 //
 //  AXIOM: all zeros means nothing happens.
 //    Opcode 0000 does nothing, whatever the other 12 bits hold, so the
-//    whole range 0x0000..0x0FFF is inert.  Flush and stall both work by
-//    writing zeros into a pipeline register.  Do not break this.
+//    whole range 0x0000..0x0FFF is inert, and an all-zero control word
+//    writes nothing.  Do not break this.
 //=========================================================================
 
 //---- widths -------------------------------------------------------------
@@ -68,44 +68,19 @@
 
 //---- alu_op, low half == R-type funct.  For OP_ALU this IS the control --
 //     word, so the R-type path needs no control ROM.  Width `ALUOPBUS_LEN.
-//     The trailing tag is the `SEL_* result category EX routes it to.
-`define ALU_NOP 6'b000000       // result discarded          -- SEL_NOP
-`define ALU_ADD 6'b000001       // a + b                     -- SEL_ARITH
-`define ALU_SUB 6'b000010       // a - b                     -- SEL_ARITH
-`define ALU_AND 6'b000011       // a & b                     -- SEL_LOGIC
-`define ALU_OR 6'b000100       // a | b                     -- SEL_LOGIC
-`define ALU_XOR 6'b000101       // a ^ b                     -- SEL_LOGIC
-`define ALU_NOR 6'b000110       // ~(a | b)  NOT a is NOR a,a -- SEL_LOGIC
-`define ALU_SLT 6'b000111       // signed   a < b ? 1 : 0     -- SEL_ARITH
-`define ALU_SLTU 6'b001000       // unsigned a < b ? 1 : 0     -- SEL_ARITH
-`define ALU_SLL 6'b001001       // a <<  b[3:0]               -- SEL_SHIFT
-`define ALU_SRL 6'b001010       // a >>  b[3:0]               -- SEL_SHIFT
-`define ALU_SRA 6'b001011       // a >>> b[3:0], sign-filled  -- SEL_SHIFT
+//     The other opcodes borrow ADD, AND or OR, see control_unit.v.
+`define ALU_NOP 6'b000000       // result 0, OP_ALU with this funct writes nothing
+`define ALU_ADD 6'b000001       // a + b
+`define ALU_SUB 6'b000010       // a - b
+`define ALU_AND 6'b000011       // a & b
+`define ALU_OR 6'b000100       // a | b
+`define ALU_XOR 6'b000101       // a ^ b
+`define ALU_NOR 6'b000110       // ~(a | b)  NOT a is NOR a,a
+`define ALU_SLT 6'b000111       // signed   a < b ? 1 : 0
+`define ALU_SLTU 6'b001000       // unsigned a < b ? 1 : 0
+`define ALU_SLL 6'b001001       // a <<  b[3:0]
+`define ALU_SRL 6'b001010       // a >>  b[3:0]
+`define ALU_SRA 6'b001011       // a >>> b[3:0], sign-filled
 //                   6'b001100 .. 6'b001111   reserved for future funct
-
-//---- alu_op, high half.  The non-R opcodes carry their own alu_op, decoded
-//     from `F_OPCODE in ID.  These sit in funct's reserved range and can
-//     never appear as a real funct.
-`define ALU_LD 6'b010000       // LD    -- EX adds R[Rs1] + sext8(imm)  -- SEL_LOAD_STORE
-`define ALU_ST 6'b010001       // ST    -- EX adds R[Rs1] + sext8(imm)  -- SEL_LOAD_STORE
-`define ALU_BEQ 6'b010010       // BEQ                                  -- SEL_JUMP_BRANCH
-`define ALU_BNE 6'b010011       // BNE                                  -- SEL_JUMP_BRANCH
-`define ALU_BLT 6'b010100       // BLT, signed                          -- SEL_JUMP_BRANCH
-`define ALU_BGE 6'b010101       // BGE, signed                          -- SEL_JUMP_BRANCH
-`define ALU_JAL 6'b010110       // JAL   -- EX forms the link value PC+1 -- SEL_JUMP_BRANCH
-`define ALU_JALR 6'b010111       // JALR  -- EX forms the link value PC+1 -- SEL_JUMP_BRANCH
-//                   6'b011000 .. 6'b111111   reserved
-
-//---- alu_sel.  Which functional unit's result writes back.  EX switches
-//     on this, then the unit switches on alu_op.  SEL_NOP holds the result
-//     at zero, so a zeroed ID/EX register discards it -- the zeros axiom.
-`define ALUSELBUS_LEN 2:0
-`define SEL_NOP 3'b000            // NOP
-`define SEL_LOGIC 3'b001            // AND ANDI OR ORI XOR NOR
-`define SEL_SHIFT 3'b010            // SLL SRL SRA
-`define SEL_ARITH 3'b011            // ADD ADDI SUB SLT SLTU LI LUI
-`define SEL_JUMP_BRANCH 3'b100            // BEQ BNE BLT BGE JAL JALR
-`define SEL_LOAD_STORE 3'b101            // LD ST
-//                       3'b110 .. 3'b111   reserved
 
 `endif

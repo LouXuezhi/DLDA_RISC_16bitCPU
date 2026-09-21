@@ -1,0 +1,16 @@
+// JAL in ID while an ST holds MEM.  The JAL must stay in ID until the
+// stall clears and then reach EX, or its link write is lost.
+//   0  LI   R0, #0
+5000
+//   1  LI   R3, #0
+5C00
+//   2  ST   R3, 9(R0)        ; MEM stall
+80C9
+//   3  NOP
+0000
+//   4  JAL  R2, sub          ; R2 = 5
+D802
+//   5  HALT R1
+D400
+//   6  sub:    HALT R1
+D400

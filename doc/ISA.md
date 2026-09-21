@@ -1,6 +1,6 @@
 # 16 位 RISC 指令集 · 16-bit RISC ISA
 
-`class_cpu` · 五级流水 IF · ID · EX · MEM · WB。
+`class_cpu` · 单周期：数据通路 + 控制单元，每条指令一个时钟。
 
 编码定义在 [`src/define_ISA.v`](../src/define_ISA.v)。**本文是规范**；代码和规范不一致时，
 在同一个 commit 里改掉其中一个。
@@ -13,24 +13,17 @@ if code and spec disagree, fix one of them in the same commit.*
 | 置零的东西 Zeroed | 含义 Means |
 |---|---|
 | 操作码 `0000` | 什么都不做，无论其余 12 位是什么 |
-| `alu_op == 6'b000000` | NOP，结果被丢弃 |
-| `reg_we` `dmem_we` `dmem_re` | 全部高有效，所以 0 是惰性的 |
-| 复位或冲刷后的任何流水寄存器 | 正是它该有的气泡 |
+| `alu_op == 6'b000000` | NOP，结果为 0 且不写回 |
+| `reg_we` `mem_we` | 全部高有效，所以 0 是惰性的 |
+| 全零的控制字 | 不写寄存器、不写存储，`PC ← PC + 1` |
 
-冲刷（flush）往 IF/ID 写零，暂停（stall）往 ID/EX 写零。有了这条规则，两者都是**构造上正确**
-的，不需要额外逻辑。它还意味着一片没烧过程序的 block RAM —— 上电全零 —— 执行的是 NOP 而不是
-乱码。
+[`src/define_ctrl.v`](../src/define_ctrl.v) 里每个选择信号的 0 都是最常用、最无害的那一路，
+所以控制单元对 `NOP` 和保留操作码只要输出全零。它还意味着一片没烧过程序的存储 —— 全零 ——
+执行的是 NOP 而不是乱码。
 
-*Flush writes zeros into IF/ID; stall writes zeros into ID/EX. With this rule both are
-correct by construction. It also means an unprogrammed block RAM — which powers up as
-zeros — executes NOPs instead of garbage.*
-
-**气泡不是一条指令。** 暂停是 `stall[5:0]` 加上被清零的控制位，全部发生在流水线内部；不会
-去取一条 NOP，也不会往里注入什么。`NOP` **指令**存在是为了另一个理由：让程序员能写出它，以
-及让全零的那个字是惰性的。
-
-*A bubble is not an instruction. Stalling is `stall[5:0]` plus zeroed control bits,
-entirely inside the pipeline; nothing is fetched or injected to make one.*
+*Every select in `define_ctrl.v` has its inert choice at 0, so for NOP and the reserved
+opcode the control unit emits all zeros. An unprogrammed memory — all zeros — executes
+NOPs instead of garbage.*
 
 ## 状态 · State
 
@@ -71,11 +64,11 @@ memory.*
 
 **每个字段在用到该格式的每条指令里都只有一个含义。**
 
-`Rs1` 永远在 `[9:8]`，`Rs2` 永远在 `[7:6]`。ID 直接拿指令字去驱动寄存器堆的读端口，所以**读
-寄存器和译码是并行开始的**。操作码只决定读回来的值用不用 —— 先读，后决定。
+`Rs1` 永远在 `[9:8]`，`Rs2` 永远在 `[7:6]`。寄存器堆的读端口直接接在指令字上，所以**读
+寄存器和译码是并行的**。操作码只决定读回来的值用不用 —— 先读，后决定。
 
-*`Rs1` is always `[9:8]` and `Rs2` always `[7:6]`. ID drives the register-file read ports
-straight from the instruction word, so the read starts in parallel with decode. The
+*`Rs1` is always `[9:8]` and `Rs2` always `[7:6]`. The register-file read ports hang
+straight off the instruction word, so the read runs in parallel with decode. The
 opcode only decides whether the returned value is used — read always, decide later.*
 
 由此带来两个后果，都无害：S 格式没有 `Rd`，但 `inst[11:10]` 照读不误（`reg_we = 0`）；I 格式
@@ -105,7 +98,7 @@ below `Rs2` — so the top 2 bits go where `Rd` would be. The split costs wires,
 | `1011` | S | `BLT  Rs1, Rs2, #imm8` | `if (<)` 有符号，同上 |
 | `1100` | S | `BGE  Rs1, Rs2, #imm8` | `if (>=)` 有符号，同上 |
 | `1101` | I | `JAL  Rd, #imm8` | `Rd ← PC+1 ; PC ← PC + sext8(imm)` |
-| `1110` | I | `JALR Rd, imm8(Rs1)` | `Rd ← PC+1 ; PC ← (R[Rs1] + sext8(imm))[7:0]` |
+| `1110` | I | `JALR Rd, imm8(Rs1)` | `Rd ← PC+1 ; PC ← R[Rs1] + sext8(imm)` |
 
 操作码 `1111` 保留。
 
@@ -117,23 +110,16 @@ below `Rs2` — so the top 2 bits go where `Rd` would be. The split costs wires,
 * 因此 `JALR` 是唯一能到达任意地址的指令 —— 它的目标来自寄存器，用 `LI` 或 `LUI`+`ORI` 先
   把地址凑出来。它同时也是返回指令和跳转表指令。
 * 没有 `HALT`。`JAL Rx, #0` —— 跳转到自身 —— 是停机惯用法；专门做一条停机指令只能省电，而
-  这条流水线没有任何需要停下来的状态。
+  这个核没有任何需要停下来的状态。
 
 > **注意：** `JAL Rx, #0` 每转一圈都会往 `Rx` 里写一次 `PC+1`。停机用的寄存器要挑一个后面
 > 不再读的。
 
-### `alu_op` 与 `alu_sel` · ALU op and ALU sel
+### `alu_op` · ALU op
 
-每条指令都带一个 `alu_op`（ALU 做什么）和一个 `alu_sel`（哪个功能单元的结果写回）。ID 用一个
-`case (opcode)` 同时定下这两个；EX 先按 `alu_sel` 分流，再由该单元按 `alu_op` 选操作。两个枚举
-都在 [`src/define_ISA.v`](../src/define_ISA.v) 里，紧挨着 funct 码。
-
-*Every instruction carries an `alu_op` (what the ALU does) and an `alu_sel` (which
-functional unit's result writes back). ID sets both from one `case (opcode)`; EX switches
-on `alu_sel`, then the unit switches on `alu_op`.*
-
-**`alu_op` 低半区 —— 就是 R 型的 `funct` 字段。** 对 `ALU` 操作码来说，这个 `funct` **本身就
-是** ALU 的控制字，所以 R 型通路不需要任何控制 ROM。带立即数的那些指令合成出同样的码。
+**`alu_op` 就是 R 型的 `funct` 字段。** 对 `ALU` 操作码来说，这个 `funct` **本身就是** ALU 的
+控制字，所以 R 型通路不需要任何控制 ROM。其他操作码借用其中的 `ADD`、`AND`、`OR`，见下面的
+译码表。
 
 | `funct` | | `funct` | | `funct` | |
 |---|---|---|---|---|---|
@@ -142,31 +128,8 @@ on `alu_sel`, then the unit switches on `alu_op`.*
 | `000010` | `SUB` | `000110` | `NOR` | `001010` | `SRL` |
 | `000011` | `AND` | `000111` | `SLT` | `001011` | `SRA` |
 
-`001100`–`001111` 保留给将来的 funct。移位量取 `b[3:0]`。
-
-**`alu_op` 高半区 —— 内部使用。** 非 R 型的操作码各自带一个 `alu_op`，在 ID 里从操作码译出。
-它们落在 `funct` 的保留区里，所以永远不可能和一个真实的 `funct` 撞上。
-
-| `alu_op` | | `alu_op` | |
-|---|---|---|---|
-| `010000` | `LD` | `010100` | `BLT` |
-| `010001` | `ST` | `010101` | `BGE` |
-| `010010` | `BEQ` | `010110` | `JAL` |
-| `010011` | `BNE` | `010111` | `JALR` |
-
-`011000`–`111111` 保留。
-
-**`alu_sel`。** `SEL_NOP` 把结果按在零上，所以一个被清零的 ID/EX 寄存器自然就丢弃了结果 ——
-还是那条全零公理。
-
-| `alu_sel` | | 覆盖 Covers |
-|---|---|---|
-| `000` | `NOP` | `NOP` |
-| `001` | `LOGIC` | `AND` `ANDI` `OR` `ORI` `XOR` `NOR` |
-| `010` | `SHIFT` | `SLL` `SRL` `SRA` |
-| `011` | `ARITH` | `ADD` `ADDI` `SUB` `SLT` `SLTU` `LI` `LUI` |
-| `100` | `JUMP_BRANCH` | `BEQ` `BNE` `BLT` `BGE` `JAL` `JALR` |
-| `101` | `LOAD_STORE` | `LD` `ST` |
+`001100`–`001111` 保留给将来的 funct。移位量取 `b[3:0]`。*nop* 和保留码的 ALU 结果是 0，
+而且不写回。
 
 `BGT a,b` 汇编成 `BLT b,a`，`BLE a,b` 汇编成 `BGE b,a` —— 比较器对两个操作数是对称的，所以
 交换不花代价。四个分支操作码因此覆盖了全部六种有符号关系。
@@ -210,9 +173,9 @@ a property of the hardware.*
 
 *A silent wrong answer, not an error.*
 
-这就是为什么展宽方式是**按操作码逐条选**的，在 ID 写 `imm1` / `imm2` 的那一点上决定，而不是
-整条数据通路统一定一次。一个 16 位常数用 `LUI Rd,#hi` 加 `ORI Rd,Rd,#lo` 构造，而这个 `ORI`
-之所以能成立，正是因为它的立即数是零扩展的。
+这就是为什么展宽方式是**按操作码逐条选**的，由控制单元的 `imm_sel` 决定，而不是整条数据
+通路统一定一次。一个 16 位常数用 `LUI Rd,#hi` 加 `ORI Rd,Rd,#lo` 构造，而这个 `ORI` 之所以
+能成立，正是因为它的立即数是零扩展的。
 
 ## 译码 · Decode
 
@@ -228,79 +191,59 @@ wire [7:0] imm_i  = inst[ 7: 0];
 wire [7:0] imm_s  = {inst[11:10], inst[5:0]};
 ```
 
-然后是一个 `case (opcode)`。**这里没有操作数选择码，也没有立即数形式选择码**：ID 直接把
-**展宽好的 16 位值本身**放在 `imm1`、`imm2`、`ls_offset` 上，而 `rs1_re`/`rs2_re` 兼任操作数
-mux —— 读寄存器就由前递链供值，不读就让立即数落下来。这样 EX 里就不需要立即数生成器和它的
-选择线了。下表中的破折号表示"该端口读的是寄存器，所以立即数用不上"。
+然后 [`src/control_unit.v`](../src/control_unit.v) 用一个 `case (opcode)` 给出整组控制信号。
+每个信号先置 0，每个操作码只拉高它要的那几个 —— 所以 `NOP` 和保留操作码 `1111` 落到全零。
+编码在 [`src/define_ctrl.v`](../src/define_ctrl.v)。
 
-*ID emits the widened 16-bit value itself on `imm1`, `imm2` and `ls_offset`, and
-`rs1_re`/`rs2_re` double as the operand mux. That removes an immediate generator and its select
-lines from EX.*
+*One `case (opcode)` in `control_unit.v` sets the whole control word. Every output starts
+at 0 and each opcode raises only what it needs, so NOP and the reserved opcode fall through
+as all zeros.*
 
-| | `rs1_re` | `rs2_re` | `reg_we` | `alu_op` | `alu_sel` | `imm1` → `op1` | `imm2` → `op2` | `ls_offset` | `br` |
-|---|---|---|---|---|---|---|---|---|---|
-| `SYS` | 0 | 0 | 0 | `NOP` | `NOP` | 0 | 0 | 0 | 0 |
-| `ALU` | 1 | 1 | 1 | `funct` | 由 `funct` 定 | — | — | 0 | 0 |
-| `ADDI` | 1 | 0 | 1 | `ADD` | `ARITH` | — | `sext8(imm_i)` | 0 | 0 |
-| `ANDI` | 1 | 0 | 1 | `AND` | `LOGIC` | — | `zext8(imm_i)` | 0 | 0 |
-| `ORI` | 1 | 0 | 1 | `OR` | `LOGIC` | — | `zext8(imm_i)` | 0 | 0 |
-| `LI` | 0 | 0 | 1 | `ADD` | `ARITH` | `sext8(imm_i)` | 0 | 0 | 0 |
-| `LUI` | 0 | 0 | 1 | `ADD` | `ARITH` | `{imm_i, 8'h00}` | 0 | 0 | 0 |
-| `LD` | 1 | 0 | 1 | `LD` | `LOAD_STORE` | — | 0 | `sext8(imm_i)` | 0 |
-| `ST` | 1 | **1** | 0 | `ST` | `LOAD_STORE` | — | — | `sext8(imm_s)` | 0 |
-| 分支 | 1 | 1 | 0 | `BEQ`…`BGE` | `JUMP_BRANCH` | — | — | 0 | 命中则 1 |
-| `JAL` | 0 | 0 | 1 | `JAL` | `JUMP_BRANCH` | 0 | 0 | 0 | 1 |
-| `JALR` | **1** | 0 | 1 | `JALR` | `JUMP_BRANCH` | — | 0 | 0 | 1 |
+| | `reg_we` | `mem_we` | `src_a` | `src_b` | `imm_sel` | `alu_op` | `wb_sel` | `pc_sel` |
+|---|---|---|---|---|---|---|---|---|
+| `SYS` | 0 | 0 | `REG` | `REG` | `SEXT_I` | `NOP` | `ALU` | `PLUS1` |
+| `ALU` | funct 合法则 1 | 0 | `REG` | `REG` | `SEXT_I` | `funct` | `ALU` | `PLUS1` |
+| `ADDI` | 1 | 0 | `REG` | `IMM` | `SEXT_I` | `ADD` | `ALU` | `PLUS1` |
+| `ANDI` | 1 | 0 | `REG` | `IMM` | `ZEXT_I` | `AND` | `ALU` | `PLUS1` |
+| `ORI` | 1 | 0 | `REG` | `IMM` | `ZEXT_I` | `OR` | `ALU` | `PLUS1` |
+| `LI` | 1 | 0 | `ZERO` | `IMM` | `SEXT_I` | `ADD` | `ALU` | `PLUS1` |
+| `LUI` | 1 | 0 | `ZERO` | `IMM` | `LUI_I` | `ADD` | `ALU` | `PLUS1` |
+| `LD` | 1 | 0 | `REG` | `IMM` | `SEXT_I` | `ADD` | `MEM` | `PLUS1` |
+| `ST` | 0 | 1 | `REG` | `IMM` | `SEXT_S` | `ADD` | `ALU` | `PLUS1` |
+| 分支 | 0 | 0 | `REG` | `REG` | `SEXT_S` | `NOP` | `ALU` | 条件成立则 `REL` |
+| `JAL` | 1 | 0 | `REG` | `REG` | `SEXT_I` | `NOP` | `PC1` | `REL` |
+| `JALR` | 1 | 0 | `REG` | `IMM` | `SEXT_I` | `ADD` | `PC1` | `ALU` |
 
-`LD`/`ST` 走 EX 里的地址加法器，算 `op1 + ls_offset` 再截断到 8 位 —— 这是第三条操作数
-总线，和 `op2` 分开，这样 `SEL_LOAD_STORE` 不必去挤 ALU 的操作数通路。`JAL`/`JALR` 压根不
-用加法器：ID 手里已经有 PC，就在那里形成 `PC + 1`，作为 `link_addr` 往下带。分支解析留在 ID
-（比较器 + 目标加法器）；分支的 `alu_op`/`alu_sel` 一路带着但用不上，除非将来把解析挪到 EX。
+1. `ALU` 操作码只在 `funct` 是 `ADD`…`SRA` 之一时写回；`funct = 000000` 和保留的
+   `001100`–`001111` 什么都不写。
+2. `LD`/`ST` 的地址就是 ALU 的和，取低 8 位。`ST` 写入的数据是 `R[Rs2]`。
+3. `LI`/`LUI` 把 ALU 的 `a` 端接 0，于是 `0 + imm` 就是要装的常数；它们的 `Rs1` 字段是立即数
+   的一部分，被读但不用。
+4. 写回 mux 三路：ALU 结果、数据存储读出、`PC + 1`（链接值）。
+5. 分支只有 `pc_sel` 依赖数据：`branch_cmp` 给出 `eq` 和有符号 `lt`，`BEQ`/`BNE`/`BLT`/`BGE`
+   分别取 `eq`/`!eq`/`lt`/`!lt`。
 
-**没有 `dmem_re`/`dmem_we` 控制位，也没有 `branch` 码。** MEM 从 `alu_op == LD`/`ST` 推出访存
-选通，`br` 是解析出来的结果而不是译码属性 —— 于是没有任何字段身兼两职，也就没有东西需要保持
-同步。
+下一条 PC，一个三路 mux：
 
-*There is no `dmem_re`/`dmem_we` control bit and no `branch` code — so no field means two
-things and nothing has to stay in sync.*
-
-1. `reg_we` 是寄存器堆唯一在意的位，所以一个无意义的 `Rd` 是无害的。
-2. `rs1_re`/`rs2_re` 驱动的是**前递**和操作数 mux。一个源寄存器只有在被读的时候才构成冒险 ——
-   `ADDI` 把 `rs2_re` 置 0，所以 `inst[7:6]` 永远不会触发检查。
-3. `LD` 是唯一写回来源是内存的指令。load-use 检测器提前一级看的就是这一位。
-4. `link_addr` 在流水线上是一个独立字段，EX 在 `SEL_JUMP_BRANCH` 下把它送到 `reg_wdata`。
-   写回 mux 保持两路。
-
-`JALR` 把 `rs1_re` 置 1，是因为它的**目标**需要 `R[Rs1]`。这个值送进 ID 的分支目标加法器，像
-任何一次 ID 读一样接受前递；一条 `LD` 后面紧跟 `JALR` 就是一次 load-use 暂停。
-
-分支目标，一个 16 位加法器加输入端的 mux：
-
-| | `a` | `b` |
+| `pc_sel` | `next_pc` | 谁用 |
 |---|---|---|
-| 分支 branches | `PC` | `sext8(imm_s)` |
-| `JAL` | `PC` | `sext8(imm_i)` |
-| `JALR` | `R[Rs1]` 前递后的值，即 `op1` | `sext8(imm_i)` |
+| `PLUS1` | `PC + 1` | 其余所有指令、不跳的分支 |
+| `REL` | `PC + imm` | 跳了的分支（`imm = sext8(imm_s)`）、`JAL`（`imm = sext8(imm_i)`） |
+| `ALU` | ALU 结果，即 `R[Rs1] + sext8(imm_i)` | `JALR` |
 
-`JAL` 和分支两个输入都一样，区别只在于立即数是怎么拆的；`JALR` 是唯一换掉 `a` 的那个。
+`JAL` 和分支共用 `PC + imm` 这个加法器，区别只在立即数怎么拆；`JALR` 借用 ALU 算目标，
+因为它自己不需要 ALU 算别的 —— 写回的是 `PC + 1`。
 
 ## 冒险 · Hazards
 
-对每个源寄存器，从最新的产生者往回找：
+单周期核里没有冒险。每条指令在一个时钟内读寄存器、算、写回；写入在上升沿落下，下一条指令
+在下一个周期读到它。所以没有前递、没有暂停、没有冲刷，分支也不杀指令。
 
-```verilog
-if      (re && prev_is_load     && fwd_ex_reg_waddr  == raddr) stallreq = 1;  // load-use
-else if (re && fwd_ex_reg_we   && fwd_ex_reg_waddr  == raddr) op = fwd_ex_reg_wdata;
-else if (re && fwd_mem_reg_we  && fwd_mem_reg_waddr == raddr) op = fwd_mem_reg_wdata;
-else if (re)                                                  op = rdata;
-else                                                          op = imm;
-```
+*A single-cycle core has no hazards: each instruction's write lands on the clock edge and the
+next instruction reads it in the next cycle. No forwarding, no stall, no flush.*
 
-`re` 把整条链都门控住了，所以 `LI`、`LUI`、`JAL` 永远不会暂停。load-use 是前递唯一救不了的
-情况：一个气泡。分支在 ID 解析，命中时杀掉一条指令；不命中则零代价。
-
-*`re` gates the whole chain. Load-use is the one case forwarding cannot cover: one
-bubble. A taken branch, resolved in ID, kills one instruction; not-taken costs nothing.*
+寄存器堆因此**不能**有写读旁路：写数据是由同一周期的读数据算出来的，旁路会闭合一个组合环
+（`ADDI R0,R0,#1`：`rdata1 → ALU → wdata → rdata1`）。
 
 ## 伪指令 · Pseudo-instructions
 
@@ -361,16 +304,16 @@ done:   JAL  R3, #0          ; 停机 —— 相对寻址，跳到自身就是 +
 4. **没有字节寻址。** 字节数组会浪费每个字的一半。仅仅在操作码 `1111` 上加 `LB`/`SB` 是不够
    的：字节根本不可寻址，加它意味着改变"一个地址选中多大一块"，随之而来的是两个存储上的对齐
    和字节使能问题。
-5. **ID 是最长的一级。** 寄存器读、前递 mux、比较器、分支加法器全挤在这里，而且前递值是从
-   ALU 组合出来的：`ID/EX → ALU → mux → ID/EX`。如果 100 MHz 跑不过，就把分支解析挪到 EX，
-   代价是每次跳转多杀一条指令。
+5. **一个周期要走完整条通路。** 最长的一条是 `LD`：`pc → imem → regfile → ALU → dmem →
+   写回 mux → regfile`，时钟周期不能短于它。单周期核的 CPI 恒为 1，换来的是这条长路径决定
+   时钟频率。
 
 ## 验证 · Verification
 
 测试放在 [`testbench/`](../testbench/)，写法见该目录下的 README。
 
-一个测试的形状是：把十六进制程序 `$readmemh` 进 `dut.u_cache.imem`，跑若干周期，然后检查
-寄存器和数据字。
+一个测试的形状是：把十六进制程序 `$readmemh` 进 `dut.u_imem.mem`，跑若干周期，然后检查
+寄存器和数据字（`dut.u_regfile.regs`、`dut.u_dmem.mem`）。
 
 
 

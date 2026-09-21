@@ -8,42 +8,18 @@
 
 ## 域前缀
 
-| 前缀 | 含义 | 谁产生 |
+单周期核只有一个域：所有信号都属于「本周期正在执行的那条指令」，所以不带域前缀。
+`pc`、`inst`、`next_pc`、`reg_we` 在 `cpu_core.v` 里各自唯一。
+
+五级流水版（`refine` 分支）用 `if_` `id_` `ex_` `mem_` `wb_` 前缀区分同一个值的不同世代；
+单周期核里一个值只有一个世代，这层前缀没有东西可区分。
+
+## 模块端口
+
+| 模块类 | 端口 | 例 |
 |---|---|---|
-| 无 | `clk`、`rst`、`pc` —— 全局或域内唯一 | — |
-| `if_` `id_` `ex_` `mem_` `wb_` | 顺流数据通路，前缀 = 该值当前所在的流水级 | 上游流水寄存器 |
-| `ctrl_` | 逆流：停顿向量 | `ctrl` |
-| `id_br` `id_br_addr` | 逆流：分支重定向 | `id_stage` |
-| `pc_br_ready` | 逆流：PC 重定向已完成 | `pc_reg` |
-| `fwd_ex_` `fwd_mem_` | 逆流：前递源，前缀 = 数据来自哪一级 | `ex_stage` / `mem_stage` |
-| `imem_` `dmem_` | 存储器接口，Harvard 两侧各一 | `cache` |
-
-**世代，不是来源。** 同一个 PC 在同一时刻存在于两个触发器里：`pc_reg` 里的是下一条要取的，`if_id_reg` 里的是正在译码的那条。前缀区分的是这个，不是"谁给我的"。
-
-*The prefix names the generation, not the producer. The same PC lives in two
-flip-flops at once; the prefix is what tells them apart.*
-
-## 三类模块，三种端口写法
-
-| 模块类 | 输入端口 | 输出端口 | 例 |
-|---|---|---|---|
-| 流水寄存器（跨两域） | 上游域前缀 | 下游域前缀 | `id_ex_reg`: `id_op1` → `ex_op1` |
-| 组合级（单域） | 不带域前缀 | 不带域前缀 | `ex_stage`: `op1`、`alu_sel` |
-| 叶子模块 | 自己的局部词汇 | 同左 | `regfile`: `raddr1`、`rdata1` |
-
-组合级不带域前缀，因为模块本身就是那一域。域前缀属于 **`cpu_core.v` 里的连线**——只有在顶层才需要区分世代。
-
-跨域进入组合级的信号（前递、重定向、握手）例外：它们带产生者前缀，因为在这一级看来它们来自"未来"。
-
-## `_i` / `_o`
-
-只在**一个组合级把同一个值原样透传**时使用，此时域和对象都相同，方向是唯一的区分轴。
-
-```
-ex_reg_waddr_i → [ex_stage] → ex_reg_waddr_o
-```
-
-不透传就不加。`ex_op1` 没有 `_i`/`_o`，因为 EX 之后它就不存在了。
+| 顶层 | 连线用词表里的词，不带前缀 | `cpu_core`: `alu_result`、`wb_data` |
+| 叶子模块 | 自己的局部词汇 | `regfile`: `raddr1`、`rdata1`；`alu`: `a`、`b`、`result` |
 
 ## 词表
 
@@ -51,23 +27,20 @@ ex_reg_waddr_i → [ex_stage] → ex_reg_waddr_o
 
 | 词 | 含义 | | 词 | 含义 |
 |---|---|---|---|---|
-| `pc` | 程序计数器 | | `re` / `we` | 读 / 写使能 |
-| `inst` | 指令字 | | `raddr` / `waddr` | 读 / 写地址 |
-| `rs1` `rs2` `rd` | 源 / 目的寄存器号 | | `rdata` / `wdata` | 读 / 写数据 |
-| `op1` `op2` | ALU 操作数 | | `busy` / `done` | 存储器握手 |
-| `alu_op` | ALU 做什么 | | `stallreq` | 单级的停顿请求 |
-| `alu_sel` | 哪个单元的结果写回 | | `ctrl_stall` | 六位停顿向量 |
-| `ls_offset` | LD/ST 的立即数偏移 | | `br` / `br_addr` | 分支发生 / 目标 |
-| `ls_addr` | LD/ST 算出的数据地址 | | `link_addr` | JAL/JALR 的返回地址 |
-| `st_data` | ST 要写的数据 | | `*_next` | 触发器的 D 端 |
+| `pc` | 程序计数器 | | `we` | 写使能 |
+| `next_pc` | PC 触发器的 D 端 | | `raddr` / `waddr` | 读 / 写地址 |
+| `inst` | 指令字 | | `rdata` / `wdata` | 读 / 写数据 |
+| `rs1` `rs2` `rd` | 源 / 目的寄存器号 | | `imm` | 展宽后的立即数 |
+| `alu_op` | ALU 做什么（= funct） | | `eq` `lt` | 分支比较结果 |
+| `src_a` `src_b` | ALU 两个输入的选择 | | `*_sel` | 某个 mux 的选择 |
+| `wb_sel` / `wb_data` | 写回选择 / 写回值 | | `pc_sel` | next-PC 的选择 |
 
-`reg_we`/`reg_waddr`/`reg_wdata` 指寄存器堆，`dmem_we`/`dmem_addr`/`dmem_wdata` 指数据存储器。**这两族不共用 `we`**——它们曾经共用，`mem_we` 因此在 `ex_mem_reg` 和 `mem_stage` 里指两个不同的信号。
+`reg_we` 指寄存器堆，`mem_we` 指数据存储器。
 
 ## 文件与模块
 
 - 文件名 == 模块名（见 `RULE.md`）。
-- 流水寄存器叫 `<上游>_<下游>_reg`：`if_id_reg`、`id_ex_reg`、`ex_mem_reg`、`mem_wb_reg`。
-- 其余寄存器名词序为 `<对象>_reg`：`pc_reg`。
+- 寄存器名词序为 `<对象>_reg`：`pc_reg`。
 - 实例名 = `u_` + 模块名。
 
 ## 遗留

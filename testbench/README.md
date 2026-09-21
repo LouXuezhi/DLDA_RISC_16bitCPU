@@ -18,34 +18,32 @@ iverilog -g2005 -Isrc -o run testbench/my_test.v src/*.v
 ## 核的接口 · The core
 
 ```verilog
-cpu_core #(
-    .LATENCY(1)      // cache 延迟；>1 会拉高 busy，把暂停通路也测到
-) dut (
+cpu_core dut (
     .clk(clk),
     .rst(rst)        // 高有效，同步复位
 );
 ```
 
-存储在核内部，见 `cache.v` —— 指令和数据分开（哈佛结构），都按字寻址（一个地址 = 一个
+存储在核内部，见 `imem.v` / `dmem.v` —— 指令和数据分开（哈佛结构），都按字寻址（一个地址 = 一个
 16 位字），上电时清零。复位要保持几个时钟再放开。
 
-*Memory is inside the core, in `cache.v` — instruction and data are separate
+*Memory is inside the core, in `imem.v` / `dmem.v` — instruction and data are separate
 (Harvard), both word-addressed, both zero-filled at time 0. `rst` is active high;
 hold it for a few clocks before releasing it.*
 
 ## 装程序 · Loading a program
 
 一行一个 16 位十六进制字，用 `$readmemh` 灌进数组。必须在 **0 时刻之后**做，因为
-`cache.v` 自己在 `initial` 里清零：
+`imem.v` / `dmem.v` 自己在 `initial` 里清零：
 
 *Write one 16-bit word of hex per line and `$readmemh` it into the array. Do this
-after time 0, because `cache.v` zero-fills from its own `initial` block:*
+after time 0, because `imem.v` / `dmem.v` zero-fill from its own `initial` block:*
 
 ```verilog
 initial begin
     #1;
-    $readmemh("testbench/prog/my_prog.hex", dut.u_cache.imem);
-    $readmemh("testbench/prog/my_prog.data.hex", dut.u_cache.dmem);
+    $readmemh("testbench/prog/my_prog.hex", dut.u_imem.mem);
+    $readmemh("testbench/prog/my_prog.data.hex", dut.u_dmem.mem);
 end
 ```
 
@@ -76,11 +74,11 @@ end or the PC runs off into the zero-filled words, which are NOPs.*
 
 ```verilog
 dut.u_regfile.regs[0]      // R0 .. R3
-dut.u_cache.dmem[8'hFF]    // 数据字；0xFF 是 LED 端口 -- the LED port
-dut.pc                     // IF 级的 PC
-dut.id_inst                // ID 级的指令
-dut.br  dut.br_addr        // ID 解析出的分支及其目标
-dut.stall                  // {WB, MEM, EX, ID, IF, PC}，1 = 冻结 frozen
+dut.u_dmem.mem[8'hFF]      // 数据字；0xFF 是 LED 端口 -- the LED port
+dut.pc                     // 本周期正在执行的指令地址
+dut.inst                   // 本周期正在执行的指令
+dut.next_pc                // 下一条的地址，跳转就体现在这里
+dut.reg_we  dut.wb_data    // 本周期的写回；在上升沿落进寄存器堆
 ```
 
 ## 两个值得养成的习惯 · Two things worth doing
@@ -110,7 +108,7 @@ module tb;
     cpu_core dut (.clk(clk), .rst(rst));
 
     initial begin
-        #1; $readmemh("testbench/prog/my_prog.hex", dut.u_cache.imem);
+        #1; $readmemh("testbench/prog/my_prog.hex", dut.u_imem.mem);
         repeat (4) @(posedge clk);
         rst = 0;
         repeat (100) @(posedge clk);

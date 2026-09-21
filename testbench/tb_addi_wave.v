@@ -27,7 +27,7 @@ module tb_addi_wave;
         $dumpfile("addi.vcd");
         $dumpvars(0, tb_addi_wave);
         #1;
-        $readmemh("testbench/prog/addi.hex", dut.u_cache.imem);
+        $readmemh("testbench/prog/addi.hex", dut.u_imem.mem);
         repeat (2) @(posedge clk);
         rst = 0;
         repeat (14) @(posedge clk);

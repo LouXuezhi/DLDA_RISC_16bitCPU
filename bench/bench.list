@@ -15,3 +15,9 @@ memcpy   bench/prog/memcpy.hex  bench/prog/vec32.data.hex  1200  +r0=0020 +m=40:
 branchy  bench/prog/branchy.hex bench/prog/alt32.data.hex  1500  +r0=0000 +r1=0010 +m=ff:0010
 # doc/ISA.md 的那个例子，和上面的核比是小得多的一个，留着做对照。
 sum      tb/prog/sum.hex        tb/prog/sum.data.hex       400   +r0=0000 +r1=000a +m=ff:000a
+# 回归：分支在 ID 被暂停时不许生效。两个都是短程序，不看性能，只看答案。
+br_stall bench/prog/br_stall.hex bench/prog/br_stall.data.hex 400 +r1=0005 +r3=0001
+jal_stall bench/prog/jal_stall.hex -                       400   +r2=0005
+# 定向：基准核没用到的指令，以及保留编码必须是 NOP。期望值手算，见 .s 注释。
+isa_alu  bench/prog/isa_alu.hex -                          100   +r1=0080 +r2=7fff +r3=8000 +m=80:1280 +m1=81:7fff +m2=82:8000
+isa_ctl  bench/prog/isa_ctl.hex -                          100   +r0=0000 +r1=0010 +r3=0003 +m=12:000f +m1=11:0003

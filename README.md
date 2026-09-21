@@ -1,10 +1,10 @@
 # DLDA_RISC_16bitCPU
 
-16 位 RISC CPU，五级流水，Verilog 实现。
+16 位 RISC CPU，单周期（数据通路 + 控制单元），Verilog 实现。
 
 电子科技大学格拉斯哥学院《数字逻辑设计及应用》课程设计。
 
-*A 16-bit RISC CPU with a 5-stage pipeline.
+*A 16-bit single-cycle RISC CPU (datapath + control unit).
 Coursework for Digital Logic Design and
 Applications, Glasgow College, UESTC.*
 
@@ -12,23 +12,41 @@ Applications, Glasgow College, UESTC.*
 |---|---|
 | [`doc/ISA.md`](doc/ISA.md) | 指令集规范 — instruction set specification |
 | [`src/define_ISA.v`](src/define_ISA.v) | 操作码、funct 码、字段位置 — opcodes, funct codes, field positions |
-| [`src/define_ctrl.v`](src/define_ctrl.v) | 暂停向量、内存映射 — stall vector, memory map |
+| [`src/define_ctrl.v`](src/define_ctrl.v) | 控制信号编码、内存映射 — control encodings, memory map |
 | [`testbench/`](testbench/) | 测试，以及怎么写一个 — tests, and how to write one |
 | [`RULE.md`](RULE.md) | 本项目的规范，人和工具都适用 — conventions for anyone writing code here |
 
 
 
-## 流水线 · Pipeline
+## 结构 · Structure
+
+单周期：一个数据通路加一个控制单元，每条指令一个时钟，CPI = 1。
+
+*Single-cycle: one datapath plus one control unit, one instruction per clock.*
 
 ```
-IF → IF/ID → ID → ID/EX → EX → EX/MEM → MEM → MEM/WB → 寄存器堆 regfile
+pc ─► imem ─► inst ─┬─► control_unit ─► 控制字 control word
+                    ├─► regfile ─┬─► branch_cmp ─► eq, lt ─► control_unit
+                    │            └─► src_a/src_b mux ─► alu ─► dmem
+                    └─► imm_ext                          │       │
+            写回 mux write-back ◄── pc+1 ─── alu 结果 ────┴── 读出 ─┘
+next_pc = pc+1 | pc+imm | alu 结果
 ```
 
-分支在 ID 级解析（比较器 + 目标加法器），前递也在 ID 级；`src/cpu_core.v` 把这些连成
-一个核，`src/cache.v` 是指令和数据存储的替身。
+| 模块 Module | 作用 Role |
+|---|---|
+| [`src/cpu_core.v`](src/cpu_core.v) | 顶层：连线、写回 mux、next-PC mux |
+| [`src/control_unit.v`](src/control_unit.v) | 译码：`opcode`/`funct` → 控制字 |
+| [`src/pc_reg.v`](src/pc_reg.v) | PC 寄存器 |
+| [`src/imem.v`](src/imem.v) [`src/dmem.v`](src/dmem.v) | 指令 / 数据存储，组合读 |
+| [`src/regfile.v`](src/regfile.v) | R0–R3，两读一写 |
+| [`src/imm_ext.v`](src/imm_ext.v) | 立即数展宽 |
+| [`src/alu.v`](src/alu.v) | ALU，`alu_op` 即 `funct` |
+| [`src/branch_cmp.v`](src/branch_cmp.v) | 分支比较：`eq`、有符号 `lt` |
 
-*Branches resolve in ID, and so does forwarding. `src/cpu_core.v` wires the stages
-into one core; `src/cache.v` stands in for instruction and data memory.*
+五级流水的版本在 `refine` / `main` 分支上。
+
+*The 5-stage pipelined version lives on the `refine` / `main` branches.*
 
 ## 快速上手 · Quick start
 

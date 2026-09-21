@@ -1,324 +1,150 @@
-`timescale 1ns/1ps
+`timescale 1ns / 1ps
 `include "define_ISA.v"
 `include "define_ctrl.v"
 
 //=========================================================================
-//  cpu_core -- the whole pipeline, plus the cache that feeds it.
+//  cpu_core -- single-cycle datapath plus control unit.
 //
-//  IF -> IF/ID -> ID -> ID/EX -> EX -> EX/MEM -> MEM -> MEM/WB -> regfile
+//  Every instruction runs start to finish in one clock.  The only state
+//  is the PC, the register file and data memory; each takes its new value
+//  on the rising edge, and everything between two edges is combinational:
 //
-//  Branches resolve in ID: id_stage raises id_br, pc_reg takes id_br_addr
-//  and answers pc_br_ready one cycle later, if_id_reg flushes on id_br.  ctrl
-//  collects the four stall requests into one stall vector; every pipeline
-//  register reads its own two bits out of it.
+//    pc -> imem -> inst -+-> control_unit -> control word
+//                        +-> regfile -> branch_cmp -> eq, lt
+//                        |          \-> src_a/src_b muxes -> alu -> dmem
+//                        +-> imm_ext                          |      |
+//                                            wb mux <- pc+1, alu, dmem
+//
+//    next_pc = PC_PLUS1 : pc + 1
+//              PC_REL   : pc + imm        taken branch, JAL (self-relative)
+//              PC_ALU   : alu result      JALR, R[Rs1] + sext8(imm)
+//
+//  No pipeline registers, so there is nothing to stall, flush or forward.
+//  While rst is high both write enables are held low.
 //=========================================================================
 
 module cpu_core #(
     parameter INST_INIT = "",
-    parameter DATA_INIT = "",
-    parameter LATENCY   = 1
+    parameter DATA_INIT = ""
 ) (
     input wire clk,
     input wire rst
 );
 
-    //---- ctrl_stall vector ---------------------------------------------------
-    wire [`STALLBUS_LEN] ctrl_stall;
-    wire                 if_stallreq;
-    wire                 id_stallreq;
-    wire                 ex_stallreq;
-    wire                 mem_stallreq;
-
-    //---- PC / branch ----------------------------------------------------
+    //---- fetch ---------------------------------------------------------------
     wire [`INSTADDRBUS_LEN] pc;
-    wire                    pc_br_ready;
-    wire                    id_br;
-    wire [`INSTADDRBUS_LEN] id_br_addr;
+    wire [`INSTADDRBUS_LEN] pc_plus1 = pc + 1;
+    reg  [`INSTADDRBUS_LEN] next_pc;
+    wire [    `INSTBUS_LEN] inst;
 
-    //---- IF -> IF/ID ----------------------------------------------------
-    wire [`INSTADDRBUS_LEN] if_pc;
-    wire [    `INSTBUS_LEN] if_inst;
-    wire                    if_valid;
-    wire [`INSTADDRBUS_LEN] id_pc;
-    wire [    `INSTBUS_LEN] id_inst;
-    wire                    id_valid;
+    //---- control word --------------------------------------------------------
+    wire                  reg_we;
+    wire                  mem_we;
+    wire                  src_a;
+    wire                  src_b;
+    wire [`IMMSELBUS_LEN] imm_sel;
+    wire [ `ALUOPBUS_LEN] alu_op;
+    wire [ `WBSELBUS_LEN] wb_sel;
+    wire [ `PCSELBUS_LEN] pc_sel;
 
-    //---- ID -> ID/EX ----------------------------------------------------
-    wire                     id_rs1_re;
-    wire                     id_rs2_re;
-    wire [`REGADDRBUS_LEN] id_rs1_raddr;
-    wire [`REGADDRBUS_LEN] id_rs2_raddr;
-    wire [  `ALUOPBUS_LEN] id_alu_op;
-    wire [ `ALUSELBUS_LEN] id_alu_sel;
-    wire [    `REGBUS_LEN] id_op1;
-    wire [    `REGBUS_LEN] id_op2;
-    wire [`REGADDRBUS_LEN] id_reg_waddr;
-    wire                     id_reg_we;
-    wire [`INSTADDRBUS_LEN] id_link_addr;
-    wire [    `REGBUS_LEN] id_ls_offset;
+    //---- datapath ------------------------------------------------------------
+    wire [`REGBUS_LEN] rdata1;
+    wire [`REGBUS_LEN] rdata2;
+    wire [`REGBUS_LEN] imm;
+    wire [`REGBUS_LEN] alu_a = (src_a == `SRCA_ZERO) ? `ZEROWORD : rdata1;
+    wire [`REGBUS_LEN] alu_b = (src_b == `SRCB_IMM) ? imm : rdata2;
+    wire [`REGBUS_LEN] alu_result;
+    wire [`REGBUS_LEN] mem_rdata;
+    reg  [`REGBUS_LEN] wb_data;
+    wire               eq;
+    wire               lt;
 
-    //---- ID/EX -> EX ----------------------------------------------------
-    wire [  `ALUOPBUS_LEN] ex_alu_op_i;
-    wire [ `ALUSELBUS_LEN] ex_alu_sel;
-    wire [    `REGBUS_LEN] ex_op1;
-    wire [    `REGBUS_LEN] ex_op2;
-    wire [`REGADDRBUS_LEN] ex_reg_waddr_i;
-    wire                     ex_reg_we_i;
-    wire [`INSTADDRBUS_LEN] ex_link_addr;
-    wire [    `REGBUS_LEN] ex_ls_offset;
-
-    //---- EX -> EX/MEM ---------------------------------------------------
-    wire [`REGADDRBUS_LEN] ex_reg_waddr_o;
-    wire                     ex_reg_we_o;
-    wire [    `REGBUS_LEN] ex_reg_wdata;
-    wire [`DATAADDRBUS_LEN] ex_ls_addr;
-    wire [  `ALUOPBUS_LEN] ex_alu_op_o;
-    wire [    `REGBUS_LEN] ex_st_data;
-
-    //---- EX/MEM -> MEM --------------------------------------------------
-    wire [`REGADDRBUS_LEN] mem_reg_waddr_i;
-    wire                     mem_reg_we_i;
-    wire [    `REGBUS_LEN] mem_reg_wdata_i;
-    wire [`DATAADDRBUS_LEN] mem_ls_addr;
-    wire [  `ALUOPBUS_LEN] mem_alu_op;
-    wire [    `REGBUS_LEN] mem_st_data;
-
-    //---- MEM -> MEM/WB --------------------------------------------------
-    wire [`REGADDRBUS_LEN] mem_reg_waddr_o;
-    wire                     mem_reg_we_o;
-    wire [    `REGBUS_LEN] mem_reg_wdata_o;
-
-    //---- MEM/WB -> regfile ----------------------------------------------
-    wire [`REGADDRBUS_LEN] wb_reg_waddr;
-    wire                     wb_reg_we;
-    wire [    `REGBUS_LEN] wb_reg_wdata;
-
-    //---- regfile read ports ---------------------------------------------
-    wire [`REGBUS_LEN] id_rs1_rdata;
-    wire [`REGBUS_LEN] id_rs2_rdata;
-
-    //---- cache ports ----------------------------------------------------
-    wire                    imem_re;
-    wire [`INSTADDRBUS_LEN] imem_addr;
-    wire [    `REGBUS_LEN] imem_rdata;
-    wire                    imem_busy;
-    wire                    imem_done;
-
-    wire                    dmem_re;
-    wire                    dmem_we;
-    wire [`DATAADDRBUS_LEN] dmem_addr;
-    wire [    `REGBUS_LEN] dmem_wdata;
-    wire [    `REGBUS_LEN] dmem_rdata;
-    wire                    dmem_busy;
-    wire                    dmem_done;
-
-    //=====================================================================
     pc_reg u_pc_reg (
-        .clk       (clk),
-        .rst       (rst),
-        .ctrl_stall(ctrl_stall),
-        .id_br     (id_br),
-        .id_br_addr(id_br_addr),
-        .pc        (pc),
-        .br_ready  (pc_br_ready)
+        .clk    (clk),
+        .rst    (rst),
+        .next_pc(next_pc),
+        .pc     (pc)
     );
 
-    if_stage u_if_stage (
-        .rst        (rst),
-        .clk        (clk),
-        .pc         (pc),
-        .imem_rdata (imem_rdata),
-        .imem_busy  (imem_busy),
-        .imem_done  (imem_done),
-        .id_br      (id_br),
-        .ds_stall   (ctrl_stall[`STALL_ID]),
-        .imem_re    (imem_re),
-        .imem_addr  (imem_addr),
-        .if_pc      (if_pc),
-        .if_inst    (if_inst),
-        .if_valid   (if_valid),
-        .stallreq   (if_stallreq)
+    imem #(
+        .INIT(INST_INIT)
+    ) u_imem (
+        .addr(pc),
+        .inst(inst)
     );
 
-    if_id_reg u_if_id_reg (
-        .rst       (rst),
-        .clk       (clk),
-        .if_pc     (if_pc),
-        .if_inst   (if_inst),
-        .if_valid  (if_valid),
-        .ctrl_stall(ctrl_stall),
-        .id_br     (id_br),
-        .id_pc     (id_pc),
-        .id_inst   (id_inst),
-        .id_valid  (id_valid)
-    );
-
-    id_stage u_id_stage (
-        .rst              (rst),
-        .pc               (id_pc),
-        .inst             (id_inst),
-        .rs1_rdata        (id_rs1_rdata),
-        .rs2_rdata        (id_rs2_rdata),
-        // forwarding sources
-        .fwd_ex_alu_op    (ex_alu_op_o),
-        .fwd_ex_reg_we    (ex_reg_we_o),
-        .fwd_ex_reg_waddr (ex_reg_waddr_o),
-        .fwd_ex_reg_wdata (ex_reg_wdata),
-        .fwd_mem_reg_we   (mem_reg_we_o),
-        .fwd_mem_reg_wdata(mem_reg_wdata_o),
-        .fwd_mem_reg_waddr(mem_reg_waddr_o),
-        .rs1_re           (id_rs1_re),
-        .rs2_re           (id_rs2_re),
-        .rs1_raddr        (id_rs1_raddr),
-        .rs2_raddr        (id_rs2_raddr),
-        .alu_op           (id_alu_op),
-        .alu_sel          (id_alu_sel),
-        .op1              (id_op1),
-        .op2              (id_op2),
-        .reg_waddr        (id_reg_waddr),
-        .reg_we           (id_reg_we),
-        .stallreq         (id_stallreq),
-        .br               (id_br),
-        .br_addr          (id_br_addr),
-        .link_addr        (id_link_addr),
-        .ls_offset        (id_ls_offset)
+    control_unit u_control_unit (
+        .inst   (inst),
+        .eq     (eq),
+        .lt     (lt),
+        .reg_we (reg_we),
+        .mem_we (mem_we),
+        .src_a  (src_a),
+        .src_b  (src_b),
+        .imm_sel(imm_sel),
+        .alu_op (alu_op),
+        .wb_sel (wb_sel),
+        .pc_sel (pc_sel)
     );
 
     regfile u_regfile (
         .clk   (clk),
-        .rst   (rst),
-        .we    (wb_reg_we),
-        .waddr (wb_reg_waddr),
-        .wdata (wb_reg_wdata),
-        .re1   (id_rs1_re),
-        .raddr1(id_rs1_raddr),
-        .rdata1(id_rs1_rdata),
-        .re2   (id_rs2_re),
-        .raddr2(id_rs2_raddr),
-        .rdata2(id_rs2_rdata)
+        .we    (reg_we && !rst),
+        .waddr (inst[`F_RD]),
+        .wdata (wb_data),
+        .raddr1(inst[`F_RS1]),
+        .rdata1(rdata1),
+        .raddr2(inst[`F_RS2]),
+        .rdata2(rdata2)
     );
 
-    id_ex_reg u_id_ex_reg (
-        .clk         (clk),
-        .rst         (rst),
-        .id_alu_op   (id_alu_op),
-        .id_alu_sel  (id_alu_sel),
-        .id_op1      (id_op1),
-        .id_op2      (id_op2),
-        .id_reg_waddr(id_reg_waddr),
-        .id_reg_we   (id_reg_we),
-        .ctrl_stall  (ctrl_stall),
-        .id_link_addr(id_link_addr),
-        .id_ls_offset(id_ls_offset),
-        .ex_alu_op   (ex_alu_op_i),
-        .ex_alu_sel  (ex_alu_sel),
-        .ex_op1      (ex_op1),
-        .ex_op2      (ex_op2),
-        .ex_reg_waddr(ex_reg_waddr_i),
-        .ex_reg_we   (ex_reg_we_i),
-        .ex_link_addr(ex_link_addr),
-        .ex_ls_offset(ex_ls_offset)
+    imm_ext u_imm_ext (
+        .inst   (inst),
+        .imm_sel(imm_sel),
+        .imm    (imm)
     );
 
-    ex_stage u_ex_stage (
-        .rst        (rst),
-        .alu_op_i   (ex_alu_op_i),
-        .alu_sel    (ex_alu_sel),
-        .op1        (ex_op1),
-        .op2        (ex_op2),
-        .reg_waddr_i(ex_reg_waddr_i),
-        .reg_we_i   (ex_reg_we_i),
-        .link_addr  (ex_link_addr),
-        .ls_offset  (ex_ls_offset),
-        .reg_waddr_o(ex_reg_waddr_o),
-        .reg_we_o   (ex_reg_we_o),
-        .reg_wdata  (ex_reg_wdata),
-        .stallreq   (ex_stallreq),
-        .ls_addr    (ex_ls_addr),
-        .alu_op_o   (ex_alu_op_o),
-        .st_data    (ex_st_data)
+    branch_cmp u_branch_cmp (
+        .a (rdata1),
+        .b (rdata2),
+        .eq(eq),
+        .lt(lt)
     );
 
-    ex_mem_reg u_ex_mem_reg (
-        .clk          (clk),
-        .rst          (rst),
-        .ex_reg_waddr (ex_reg_waddr_o),
-        .ex_reg_we    (ex_reg_we_o),
-        .ex_reg_wdata (ex_reg_wdata),
-        .ex_ls_addr   (ex_ls_addr),
-        .ex_alu_op    (ex_alu_op_o),
-        .ex_st_data   (ex_st_data),
-        .ctrl_stall   (ctrl_stall),
-        .mem_reg_waddr(mem_reg_waddr_i),
-        .mem_reg_we   (mem_reg_we_i),
-        .mem_reg_wdata(mem_reg_wdata_i),
-        .mem_ls_addr  (mem_ls_addr),
-        .mem_alu_op   (mem_alu_op),
-        .mem_st_data  (mem_st_data)
+    alu u_alu (
+        .alu_op(alu_op),
+        .a     (alu_a),
+        .b     (alu_b),
+        .result(alu_result)
     );
 
-    mem_stage u_mem_stage (
-        .clk        (clk),
-        .rst        (rst),
-        .reg_waddr_i(mem_reg_waddr_i),
-        .reg_we_i   (mem_reg_we_i),
-        .reg_wdata_i(mem_reg_wdata_i),
-        .ls_addr    (mem_ls_addr),
-        .alu_op     (mem_alu_op),
-        .st_data    (mem_st_data),
-        .dmem_busy  (dmem_busy),
-        .dmem_done  (dmem_done),
-        .dmem_rdata (dmem_rdata),
-        .reg_waddr_o(mem_reg_waddr_o),
-        .reg_we_o   (mem_reg_we_o),
-        .reg_wdata_o(mem_reg_wdata_o),
-        .dmem_re    (dmem_re),
-        .dmem_we    (dmem_we),
-        .dmem_wdata (dmem_wdata),
-        .dmem_addr  (dmem_addr),
-        .stallreq   (mem_stallreq)
+    // ST stores Rs2; the address is the ALU sum truncated to 8 bits.
+    dmem #(
+        .INIT(DATA_INIT)
+    ) u_dmem (
+        .clk  (clk),
+        .we   (mem_we && !rst),
+        .addr (alu_result[`DATAADDRBUS_LEN]),
+        .wdata(rdata2),
+        .rdata(mem_rdata)
     );
 
-    mem_wb_reg u_mem_wb_reg (
-        .clk          (clk),
-        .rst          (rst),
-        .mem_reg_waddr(mem_reg_waddr_o),
-        .mem_reg_we   (mem_reg_we_o),
-        .mem_reg_wdata(mem_reg_wdata_o),
-        .ctrl_stall   (ctrl_stall),
-        .wb_reg_waddr (wb_reg_waddr),
-        .wb_reg_we    (wb_reg_we),
-        .wb_reg_wdata (wb_reg_wdata)
-    );
+    //---- write-back mux ------------------------------------------------------
+    always @(*) begin
+        case (wb_sel)
+            `WB_MEM: wb_data = mem_rdata;
+            `WB_PC1: wb_data = pc_plus1;
+            default: wb_data = alu_result;
+        endcase
+    end
 
-    ctrl u_ctrl (
-        .rst         (rst),
-        .if_stallreq (if_stallreq),
-        .id_stallreq (id_stallreq),
-        .ex_stallreq (ex_stallreq),
-        .mem_stallreq(mem_stallreq),
-        .ctrl_stall  (ctrl_stall)
-    );
-
-    cache #(
-        .INST_INIT(INST_INIT),
-        .DATA_INIT(DATA_INIT),
-        .LATENCY  (LATENCY)
-    ) u_cache (
-        .clk    (clk),
-        .rst    (rst),
-        .imem_re   (imem_re),
-        .imem_addr (imem_addr),
-        .imem_rdata(imem_rdata),
-        .imem_busy (imem_busy),
-        .imem_done (imem_done),
-        .dmem_re   (dmem_re),
-        .dmem_we   (dmem_we),
-        .dmem_addr (dmem_addr),
-        .dmem_wdata(dmem_wdata),
-        .dmem_rdata(dmem_rdata),
-        .dmem_busy (dmem_busy),
-        .dmem_done (dmem_done)
-    );
+    //---- next-PC mux ---------------------------------------------------------
+    always @(*) begin
+        case (pc_sel)
+            `PC_REL: next_pc = pc + imm;
+            `PC_ALU: next_pc = alu_result;
+            default: next_pc = pc_plus1;
+        endcase
+    end
 
 endmodule

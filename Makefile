@@ -55,7 +55,7 @@ test: | $(BUILD)
 	done; \
 	if [ $$fail -eq 0 ]; then echo && echo "全部跑完"; else echo && echo "有失败"; exit 1; fi
 
-# 统一 benchmark：一次跑完所有核 x 所有 cache 延迟，出周期数和 CPI。
+# 统一 benchmark：一次跑完所有核，出周期数和 CPI。
 # 核和期望值写在 bench/bench.list，怎么加一个见 bench/README.md。
 bench:
 	@bench/run.sh

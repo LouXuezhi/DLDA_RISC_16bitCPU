@@ -16,6 +16,7 @@
     BEQ  Rs1, Rs2, label        BNE BLT BGE 同；也接受 #imm
     JAL  Rd, label              也接受 #imm
     ; 注释                      # 和 // 也行
+指令字：.WORD 0xHHHH           原样放一个字，测保留编码用
 伪指令：NOP / MOV Rd,Rs / NOT Rd,Rs / NEG Rd,Rs / J Rd,label / HALT Rd /
         RET Rd,Rlink / LI16 Rd,#imm16 / BGT / BLE
 HALT 和 J 都要写出那个被丢弃的 Rd —— JAL 每次都会写它，挑一个后面不读的。
@@ -104,6 +105,8 @@ def encode(mn, ops, here, labels):
 
     if mn == "SYS":
         return 0x0000
+    if mn == ".WORD":
+        return int(ops[0], 0) & 0xFFFF
     if mn in FUNCT:
         rd, rs1, rs2 = (reg(o) for o in ops)
         return (OP["ALU"] << 12) | (rd << 10) | (rs1 << 8) | (rs2 << 6) | FUNCT[mn]
