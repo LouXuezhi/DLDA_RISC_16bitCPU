@@ -41,7 +41,7 @@ next_pc = pc+1 | pc+imm | alu 结果
 | [`src/imem.v`](src/imem.v) [`src/dmem.v`](src/dmem.v) | 指令 / 数据存储，组合读 |
 | [`src/regfile.v`](src/regfile.v) | R0–R3，两读一写 |
 | [`src/imm_ext.v`](src/imm_ext.v) | 立即数展宽 |
-| [`src/alu.v`](src/alu.v) | ALU，`alu_op` 即 `funct` |
+| [`src/alu.v`](src/alu.v) | ALU，`alu_op` 即 `funct`；输出 Z/N/C/V 标志 |
 | [`src/branch_cmp.v`](src/branch_cmp.v) | 分支比较：`eq`、有符号 `lt` |
 | [`src/mux2.v`](src/mux2.v) [`src/mux3.v`](src/mux3.v) | ALU 两个输入的选择；写回和 next-PC 的选择 |
 | [`src/adder.v`](src/adder.v) | `PC + 1`、`PC + imm` |
@@ -65,7 +65,7 @@ make verify                          # 整个核：bench 全部程序 + 200 个�
 |---|---|---|
 | `mux2` `mux3` | 每个 `sel`（含 `mux3` 未用的 3）× 随机数据 | 1000 / 2000 |
 | `adder` | 12 个边界值两两组合 + 随机 | 5144 |
-| `alu` | 全部 64 个 `alu_op`（含 NOP、保留码）× (边界值两两 + 随机 + 移位量 0–31) | 52992 |
+| `alu` | 全部 64 个 `alu_op`（含 NOP、保留码）× (边界值两两 + 随机 + 移位量 0–31)；结果和 Z/N/C/V 四个标志都查，C/V 按数学值判断 | 52992 |
 | `branch_cmp` | 边界值两两 + 相等对 + 随机 | 5644 |
 | `imm_ext` | **穷举**：65536 个指令字 × 4 种 `imm_sel` | 262144 |
 | `control_unit` | **穷举**：65536 个指令字 × `eq` × `lt` × `rst` | 524288 |

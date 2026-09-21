@@ -47,6 +47,14 @@
 `define PC_ALU 2'b10           // ALU result, R[Rs1] + sext8(imm) -- JALR
 //                   2'b11     reserved
 
+//---- ALU flags, packed onto cpu_core's alu_flags port.  Not stored, not
+//     programmer-visible: an observation port (LEDs, ILA), see alu.v.
+`define FLAGBUS_LEN 3:0
+`define FLAG_Z 3           // zero
+`define FLAG_N 2           // negative
+`define FLAG_C 1           // carry: ADD carry out, SUB borrow
+`define FLAG_V 0           // overflow: signed result out of range
+
 //---- data-side memory map.  Decoded in cpu_top.v, not in the core.  The
 //     data address truncates to 8 bits (`DATAADDRBUS_LEN), which is what
 //     puts these two ports within reach of a small negative offset:

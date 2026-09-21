@@ -50,7 +50,15 @@ def ref_adder(a, b):
 
 def ref_alu(op, a, b):
     r = iss_alu(op, a, b)                # ISS 的 R 型语义；不认识的码 -> None
-    return (0 if r is None else r,)      # ALU_NOP 和保留码输出 0
+    r = 0 if r is None else r            # ALU_NOP 和保留码输出 0
+    c = v = 0
+    if op == 1:                          # ADD：按数学值判断，不抄 RTL 的位公式
+        c = int(a + b > M16)
+        v = int(not -0x8000 <= s16(a) + s16(b) <= 0x7FFF)
+    elif op == 2:                        # SUB
+        c = int(a < b)
+        v = int(not -0x8000 <= s16(a) - s16(b) <= 0x7FFF)
+    return (r, int(r == 0), r >> 15, c, v)
 
 
 def ref_branch_cmp(a, b):

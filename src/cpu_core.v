@@ -19,14 +19,18 @@
 //    mux_pc:  PC_PLUS1 -> pc + 1
 //             PC_REL   -> pc + imm        taken branch, JAL (self-relative)
 //             PC_ALU   -> alu result      JALR, R[Rs1] + sext8(imm)
+//
+//  alu_flags = {Z, N, C, V} of this cycle's ALU result.  Nothing inside
+//  the core reads them; they are brought out for LEDs or a logic analyser.
 //=========================================================================
 
 module cpu_core #(
     parameter INST_INIT = "",
     parameter DATA_INIT = ""
 ) (
-    input wire clk,
-    input wire rst
+    input  wire                clk,
+    input  wire                rst,
+    output wire [`FLAGBUS_LEN] alu_flags
 );
 
     //---- fetch -----------------------------------------------------------
@@ -149,10 +153,14 @@ module cpu_core #(
     );
 
     alu u_alu (
-        .alu_op(alu_op),
-        .a     (alu_a),
-        .b     (alu_b),
-        .result(alu_result)
+        .alu_op  (alu_op),
+        .a       (alu_a),
+        .b       (alu_b),
+        .result  (alu_result),
+        .zero    (alu_flags[`FLAG_Z]),
+        .negative(alu_flags[`FLAG_N]),
+        .carry   (alu_flags[`FLAG_C]),
+        .overflow(alu_flags[`FLAG_V])
     );
 
     //---- memory: address = ALU sum truncated to 8 bits, ST stores Rs2 ----

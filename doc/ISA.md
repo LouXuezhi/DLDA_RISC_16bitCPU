@@ -156,6 +156,25 @@ opcodes therefore cover all six signed relations.*
 *Everywhere else, "signed" is an interpretation the programmer puts on a bit pattern, not
 a property of the hardware.*
 
+### 标志位 · Flags
+
+ALU 每个周期给出四个标志，从 `cpu_core` 的 `alu_flags` 端口引出（LED、逻辑分析仪）。**它们不被
+存储，也没有指令读它们** —— 分支比较的是寄存器，所以标志位不是程序员可见的状态，ISA 不因此改变。
+
+| 位 | 标志 | 含义 | 哪些操作 |
+|---|---|---|---|
+| 3 | Z | 结果为 0 | 全部 |
+| 2 | N | 结果 bit 15 | 全部 |
+| 1 | C | 无符号越界：`ADD` 的进位输出；`SUB` 的借位，即无符号 `a < b` | `ADD` `SUB`，其余为 0 |
+| 0 | V | 有符号越界：`ADD` 两数同号而结果变号；`SUB` 两数异号而结果与 `a` 异号 | `ADD` `SUB`，其余为 0 |
+
+同一个位模式，C 和 V 可以不一样：`0x7FFF + 0x0001 = 0x8000` 是 V=1、C=0（32767 + 1 超出有符号
+范围，但 32768 在无符号范围内）；`0xFFFF + 0x0001 = 0x0000` 是 C=1、V=0（65535 + 1 越界，但
+−1 + 1 = 0 没问题）。这就是上表「溢出检测」一行的意思。
+
+*The flags are an observation port, not state: nothing stores or reads them, and the ISA is
+unchanged.*
+
 ## 立即数的展宽 · Widening the immediate
 
 寄存器 16 位，立即数 8 位，所以每个立即数在进 ALU 之前都要展宽。**用哪种展宽取决于这个立即数
