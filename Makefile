@@ -3,7 +3,9 @@
 #   make sim              跑仿真，生成 addi.vcd
 #   make sim TB=<file>    换一个 testbench（默认 testbench/tb_addi_wave.v）
 #   make test             跑波形示例 testbench
+#   make unit             逐个模块验证（verif/unit/）
 #   make verify           RTL 与 Python ISS 逐条比对：bench 程序 + 随机程序
+#   make check            unit + verify，提交前跑这个
 #   make bench            跑统一 benchmark，和 bench/baseline.csv 比
 #   make bench-baseline   把这次的结果存成新基线（改进之前先存一次）
 #   make bench-asm        重新汇编 bench/prog/*.s -> .hex
@@ -35,7 +37,7 @@ TB       ?= testbench/tb_addi_wave.v
 VCD      := addi.vcd
 BUILD    := build
 
-.PHONY: sim test verify bench bench-baseline bench-asm wave serve stop url lint clean help
+.PHONY: sim test unit verify check bench bench-baseline bench-asm wave serve stop url lint clean help
 .DEFAULT_GOAL := help
 
 $(BUILD):
@@ -55,6 +57,12 @@ test: | $(BUILD)
 	  ./$(BUILD)/t.out 2>&1 | grep -v "^WARNING\|^VCD" || fail=1; \
 	done; \
 	if [ $$fail -eq 0 ]; then echo && echo "全部跑完"; else echo && echo "有失败"; exit 1; fi
+
+# 每个模块一个 testbench，Python 参考模型判对错。见 verif/unit.py。
+unit:
+	@python3 verif/unit.py
+
+check: unit verify
 
 # RTL 与 verif/model/iss.py 逐条比对。随机程序数用 N= 改。
 N ?= 200
@@ -111,4 +119,4 @@ clean:
 	rm -f $(VCD) *.vcd
 
 help:
-	@sed -n "2,15p" $(MAKEFILE_LIST)
+	@sed -n "2,17p" $(MAKEFILE_LIST)

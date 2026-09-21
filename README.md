@@ -53,10 +53,31 @@ next_pc = pc+1 | pc+imm | alu 结果
 ## 验证 · Verification
 
 ```sh
-make verify                          # bench 全部程序 + 200 个随机程序，RTL 与 ISS 逐条比对
-python3 verif/run.py --random 1000   # 随机程序更多
+make check                           # 下面两项都跑，提交前跑这个
+make unit                            # 逐个模块验证
+make verify                          # 整个核：bench 全部程序 + 200 个随机程序，RTL 与 ISS 逐条比对
 ```
 
+**模块级。** `verif/unit/tb_<模块>.v` 只灌激励、打印「输入 → 输出」；`verif/unit.py` 里每个模块
+一个 Python 参考，照 `doc/ISA.md` 和 `define_ctrl.v` 的编码写，逐行判对错。
+
+| 模块 | 激励 | 向量数 |
+|---|---|---|
+| `mux2` `mux3` | 每个 `sel`（含 `mux3` 未用的 3）× 随机数据 | 1000 / 2000 |
+| `adder` | 12 个边界值两两组合 + 随机 | 5144 |
+| `alu` | 全部 64 个 `alu_op`（含 NOP、保留码）× (边界值两两 + 随机 + 移位量 0–31) | 52992 |
+| `branch_cmp` | 边界值两两 + 相等对 + 随机 | 5644 |
+| `imm_ext` | **穷举**：65536 个指令字 × 4 种 `imm_sel` | 262144 |
+| `control_unit` | **穷举**：65536 个指令字 × `eq` × `lt` × `rst` | 524288 |
+| `pc_reg` | 3000 拍随机 `next_pc`，随机复位 | 3000 |
+| `regfile` | 3000 拍随机读写；同拍写读必须读到旧值（无旁路） | 3000 |
+| `dmem` | 预装一部分，先全读一遍，再 5000 拍随机读写 | 5256 |
+| `imem` | 预装一部分，0–1023 全读，再读随机 16 位地址（高位回卷） | 4024 |
+
+边界值：`0000 0001 7FFF 8000 8001 FFFF 00FF FF00 000F 0010 AAAA 5555`。每个模块都做过「把 bug
+塞回去」：各植入一个 bug，11 个都被抓到。
+
+**整个核。**
 `testbench/tb_core.v` 只负责打印：每执行一条指令打一行 commit（PC、指令、下一条 PC、写了什么）。
 判断全在 Python：`verif/run.py` 编译、运行，再拿 `verif/model/iss.py`（照 `doc/ISA.md` 写的
 指令级模拟器）的输出逐行对比，第一处不同就报出来。
