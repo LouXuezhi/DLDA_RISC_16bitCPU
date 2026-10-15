@@ -46,9 +46,9 @@ next_pc = pc+1 | pc+imm | alu 结果
 | [`src/mux2.v`](src/mux2.v) [`src/mux3.v`](src/mux3.v) | ALU 两个输入的选择；写回和 next-PC 的选择 |
 | [`src/adder.v`](src/adder.v) | `PC + 1`、`PC + imm` |
 
-五级流水的版本在 `refine` / `main` 分支上。
+五级流水的版本在 `refine` 分支上（`pipeline` 分支是改成单周期之前的 main）。
 
-*The 5-stage pipelined version lives on the `refine` / `main` branches.*
+*The 5-stage pipelined version lives on the `refine` branch (`pipeline` is main before the switch to single-cycle).*
 
 ## 验证 · Verification
 
